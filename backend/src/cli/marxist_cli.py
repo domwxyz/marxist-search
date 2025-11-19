@@ -184,6 +184,89 @@ def archive_list(config):
         console.print(f"[red]Error loading feeds: {e}[/red]\n")
 
 
+@archive.command(name='update')
+@click.option('--db-path', '-d', default=DATABASE_PATH, help='Database path')
+@click.option('--config', '-c', default=RSS_FEEDS_CONFIG, help='RSS feeds config path')
+@click.option('--duplicates', default=5, type=int, help='Stop after N consecutive duplicates')
+def archive_update(db_path, config, duplicates):
+    """
+    Incremental update: fetch only new articles from RSS feeds.
+
+    This is much faster than 'archive run' because it stops fetching
+    from each feed after finding N consecutive articles that already
+    exist in the database (default: 5).
+
+    Use this for regular updates (e.g., every 30 minutes via systemd/cron).
+    """
+    from src.ingestion.archiving_service import run_update
+
+    console.print("\n[bold cyan]Marxist Search - Incremental Update[/bold cyan]\n")
+
+    # Initialize database
+    console.print("[yellow]Initializing database...[/yellow]")
+    init_database(db_path)
+    console.print("[green]✓[/green] Database initialized\n")
+
+    # Run incremental update
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console
+    ) as progress:
+        task = progress.add_task("Checking feeds for new articles...", total=None)
+
+        # Run async update
+        stats = asyncio.run(run_update(db_path, config, duplicates))
+
+        progress.remove_task(task)
+
+    # Display results
+    console.print("\n[bold green]Incremental Update Complete![/bold green]\n")
+
+    if 'error' in stats:
+        console.print(f"[red]Error: {stats['error']}[/red]")
+        return
+
+    # Create results table
+    table = Table(title="Update Statistics")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Value", style="green")
+
+    table.add_row("Feeds Processed", str(stats.get('feeds_processed', 0)))
+    table.add_row("Feeds Failed", str(stats.get('feeds_failed', 0)))
+    table.add_row("New Entries Found", str(stats.get('total_entries', 0)))
+    table.add_row("Articles Extracted", str(stats.get('articles_extracted', 0)))
+    table.add_row("Articles Saved", str(stats.get('articles_saved', 0)))
+    table.add_row("Duplicates", str(stats.get('duplicates', 0)))
+    table.add_row("Duration", f"{stats.get('duration_seconds', 0):.2f}s")
+
+    console.print(table)
+
+    # Feed-specific details
+    if stats.get('feed_details'):
+        console.print("\n[bold]Feed Details:[/bold]\n")
+
+        details_table = Table()
+        details_table.add_column("Feed", style="cyan")
+        details_table.add_column("New Entries", justify="right")
+        details_table.add_column("Extracted", justify="right")
+        details_table.add_column("Saved", justify="right", style="green")
+        details_table.add_column("Duplicates", justify="right", style="yellow")
+
+        for feed_name, details in stats['feed_details'].items():
+            details_table.add_row(
+                feed_name,
+                str(details['entries']),
+                str(details['extracted']),
+                str(details['saved']),
+                str(details['duplicates'])
+            )
+
+        console.print(details_table)
+
+    console.print()
+
+
 # ============================================================================
 # Index Commands
 # ============================================================================
@@ -233,6 +316,69 @@ def index_build(db_path, index_path, force):
 
     except Exception as e:
         console.print(f"\n[red]Error building index: {e}[/red]\n")
+        if LOG_LEVEL == "DEBUG":
+            import traceback
+            console.print(traceback.format_exc())
+        sys.exit(1)
+
+
+@index.command(name='update')
+@click.option('--db-path', '-d', default=DATABASE_PATH, help='Database path')
+@click.option('--index-path', '-i', default=INDEX_PATH, help='Index path')
+def index_update(db_path, index_path):
+    """
+    Incrementally update txtai index with new articles.
+
+    This will:
+    1. Load only unindexed articles (indexed=0) from database
+    2. Chunk long articles if needed
+    3. Add new documents to existing index (no rebuild)
+    4. Mark articles as indexed
+
+    Much faster than full rebuild for regular updates.
+    Use this after 'archive update' to make new articles searchable.
+    """
+    from src.indexing.indexing_service import update_index
+
+    console.print("\n[bold cyan]Marxist Search - Index Update[/bold cyan]\n")
+
+    try:
+        # Run incremental index update
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console
+        ) as progress:
+            task = progress.add_task("Updating index with new articles...", total=None)
+
+            stats = update_index(db_path, index_path)
+
+            progress.remove_task(task)
+
+        console.print("\n[bold green]Index Update Complete![/bold green]\n")
+
+        # Check for errors
+        if 'error' in stats:
+            console.print(f"[yellow]{stats['error']}[/yellow]")
+            console.print()
+            return
+
+        # Display results
+        table = Table(title="Update Statistics")
+        table.add_column("Metric", style="cyan")
+        table.add_column("Value", style="green")
+
+        table.add_row("Articles Processed", str(stats.get('articles_processed', 0)))
+        table.add_row("Articles Chunked", str(stats.get('articles_chunked', 0)))
+        table.add_row("Total Chunks Created", str(stats.get('chunks_created', 0)))
+        table.add_row("Total Indexed Items", str(stats.get('total_indexed', 0)))
+        table.add_row("Duration", f"{stats.get('duration_seconds', 0):.2f}s")
+
+        console.print(table)
+        console.print()
+
+    except Exception as e:
+        console.print(f"\n[red]Error updating index: {e}[/red]\n")
         if LOG_LEVEL == "DEBUG":
             import traceback
             console.print(traceback.format_exc())

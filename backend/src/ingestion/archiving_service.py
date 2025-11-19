@@ -154,6 +154,135 @@ class ArchivingService:
 
         return total_stats
 
+    async def update_feeds(self, max_consecutive_duplicates: int = 5) -> Dict[str, any]:
+        """
+        Incremental update: fetch only new articles from RSS feeds.
+
+        Stops fetching from each feed after encountering N consecutive
+        articles that already exist in the database.
+
+        Args:
+            max_consecutive_duplicates: Stop after this many consecutive duplicates
+
+        Returns:
+            Statistics dictionary with results
+        """
+        logger.info("Starting incremental update for all feeds")
+        start_time = datetime.utcnow()
+
+        # Get list of enabled feeds
+        feed_urls = list(self.feed_configs.keys())
+        logger.info(f"Checking {len(feed_urls)} feeds for new articles")
+
+        # Get existing article URLs from database
+        logger.info("Loading existing article URLs from database...")
+        existing_urls = self._get_existing_urls()
+        logger.info(f"Found {len(existing_urls)} existing articles in database")
+
+        # Fetch only new entries from RSS feeds
+        logger.info("Fetching new RSS entries...")
+        feed_results = await self.rss_fetcher.fetch_new_feeds(
+            feed_urls,
+            existing_urls,
+            max_consecutive_duplicates
+        )
+
+        # Process each feed's new entries
+        total_stats = {
+            'feeds_processed': 0,
+            'feeds_failed': 0,
+            'total_entries': 0,
+            'articles_extracted': 0,
+            'articles_saved': 0,
+            'duplicates': 0,
+            'errors': 0,
+            'feed_details': {}
+        }
+
+        for feed_url, entries in feed_results.items():
+            feed_name = self.feed_configs[feed_url].get('name', feed_url)
+            logger.info(f"Processing {feed_name}: {len(entries)} new entries")
+
+            if not entries:
+                logger.info(f"No new entries for {feed_name}")
+                total_stats['feeds_processed'] += 1
+                self._update_feed_stats(feed_url, success=True)
+                total_stats['feed_details'][feed_name] = {
+                    'entries': 0,
+                    'extracted': 0,
+                    'saved': 0,
+                    'duplicates': 0
+                }
+                continue
+
+            total_stats['feeds_processed'] += 1
+            total_stats['total_entries'] += len(entries)
+
+            # Extract content from entries
+            logger.info(f"Extracting content from {len(entries)} new entries...")
+            articles = await self.content_extractor.extract_from_entries(entries)
+
+            total_stats['articles_extracted'] += len(articles)
+            logger.info(f"Extracted {len(articles)} articles")
+
+            if not articles:
+                logger.warning(f"No articles extracted from {feed_name}")
+                continue
+
+            # Normalize articles
+            logger.info(f"Normalizing {len(articles)} articles...")
+            normalized_articles = normalize_articles_batch(articles)
+
+            # Store articles
+            logger.info(f"Storing {len(normalized_articles)} articles...")
+            save_stats = self._save_articles(normalized_articles, feed_name)
+
+            total_stats['articles_saved'] += save_stats['saved']
+            total_stats['duplicates'] += save_stats['duplicates']
+            total_stats['errors'] += save_stats['errors']
+
+            # Store feed-specific stats
+            total_stats['feed_details'][feed_name] = {
+                'entries': len(entries),
+                'extracted': len(articles),
+                'saved': save_stats['saved'],
+                'duplicates': save_stats['duplicates']
+            }
+
+            # Update feed statistics
+            self._update_feed_stats(feed_url, success=True)
+
+            logger.info(f"Completed {feed_name}: "
+                       f"{save_stats['saved']} saved, "
+                       f"{save_stats['duplicates']} duplicates")
+
+        # Calculate duration
+        end_time = datetime.utcnow()
+        duration = (end_time - start_time).total_seconds()
+        total_stats['duration_seconds'] = duration
+
+        logger.info(f"Incremental update complete in {duration:.2f}s - "
+                   f"Saved: {total_stats['articles_saved']}, "
+                   f"Duplicates: {total_stats['duplicates']}")
+
+        return total_stats
+
+    def _get_existing_urls(self) -> set:
+        """
+        Get set of all existing article URLs from database.
+
+        Returns:
+            Set of article URLs
+        """
+        conn = self.db.connect()
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT url FROM articles")
+        rows = cursor.fetchall()
+
+        existing_urls = {row['url'] for row in rows}
+        return existing_urls
+
     async def archive_single_feed(self, feed_url: str) -> Dict[str, any]:
         """
         Archive articles from a single RSS feed.
@@ -311,6 +440,31 @@ async def run_archiving(
         else:
             stats = await service.archive_all_feeds()
 
+        return stats
+    finally:
+        service.close()
+
+
+async def run_update(
+    db_path: str,
+    rss_config_path: str,
+    max_consecutive_duplicates: int = 5
+) -> Dict[str, any]:
+    """
+    Run incremental update to fetch only new articles.
+
+    Args:
+        db_path: Path to SQLite database
+        rss_config_path: Path to RSS feeds configuration
+        max_consecutive_duplicates: Stop after this many consecutive duplicates
+
+    Returns:
+        Statistics dictionary
+    """
+    service = ArchivingService(db_path, rss_config_path)
+
+    try:
+        stats = await service.update_feeds(max_consecutive_duplicates)
         return stats
     finally:
         service.close()

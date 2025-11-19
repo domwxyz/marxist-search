@@ -169,6 +169,217 @@ class IndexingService:
 
         return stats
 
+    def update_index(self) -> Dict:
+        """
+        Incrementally update index with unindexed articles.
+
+        Only indexes articles where indexed=0 in database.
+        Much faster than full rebuild for regular updates.
+
+        Returns:
+            Statistics dictionary
+        """
+        start_time = datetime.utcnow()
+
+        logger.info("Starting incremental index update...")
+
+        # Check if index exists
+        if not self.txtai_manager.index_exists():
+            logger.error("No index found. Run build_index() first.")
+            return {
+                'error': 'No index found. Run build_index() first.',
+                'duration_seconds': 0
+            }
+
+        # Load index
+        self.txtai_manager.load_index()
+
+        # Load only unindexed articles
+        articles = self._load_unindexed_articles()
+
+        if not articles:
+            logger.info("No new articles to index")
+            return {
+                'articles_processed': 0,
+                'articles_chunked': 0,
+                'chunks_created': 0,
+                'total_indexed': 0,
+                'duration_seconds': 0
+            }
+
+        logger.info(f"Found {len(articles)} unindexed articles")
+
+        # Process articles and create documents for indexing
+        stats = {
+            'articles_processed': 0,
+            'articles_chunked': 0,
+            'chunks_created': 0,
+            'total_indexed': 0
+        }
+
+        all_documents = []
+
+        # Get next available chunk ID
+        next_chunk_id = self._get_next_chunk_id()
+
+        for article in articles:
+            stats['articles_processed'] += 1
+
+            # Check if article should be chunked
+            if self.chunker.should_chunk(article['content']):
+                # Chunk the article
+                chunks = self.chunker.chunk_article(article)
+
+                if chunks:
+                    stats['articles_chunked'] += 1
+                    stats['chunks_created'] += len(chunks)
+
+                    # Save chunks to database
+                    self._save_chunks(chunks)
+
+                    # Mark article as chunked
+                    self._mark_article_chunked(article['id'])
+
+                    # Add chunks to documents for indexing
+                    for chunk in chunks:
+                        chunk_doc = self._prepare_chunk_document(
+                            chunk,
+                            article,
+                            next_chunk_id
+                        )
+                        all_documents.append(chunk_doc)
+                        next_chunk_id += 1
+                else:
+                    # Chunking failed, index article normally
+                    article_doc = self._prepare_article_document(article)
+                    all_documents.append(article_doc)
+            else:
+                # Article doesn't need chunking
+                article_doc = self._prepare_article_document(article)
+                all_documents.append(article_doc)
+
+        # Upsert documents to existing index
+        logger.info(f"Adding {len(all_documents)} new documents to index...")
+        self.txtai_manager.upsert_documents(all_documents)
+
+        stats['total_indexed'] = len(all_documents)
+
+        # Mark newly indexed articles
+        article_ids = [article['id'] for article in articles]
+        self._mark_specific_articles_indexed(article_ids)
+
+        # Calculate duration
+        end_time = datetime.utcnow()
+        stats['duration_seconds'] = (end_time - start_time).total_seconds()
+
+        logger.info(f"Incremental index update complete in {stats['duration_seconds']:.2f}s")
+        logger.info(f"Added {stats['total_indexed']} new items "
+                   f"({stats['articles_processed']} articles, "
+                   f"{stats['chunks_created']} chunks)")
+
+        return stats
+
+    def _load_unindexed_articles(self) -> List[Dict]:
+        """
+        Load only unindexed articles from database.
+
+        Returns:
+            List of article dictionaries where indexed=0
+        """
+        conn = self.db.connect()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT id, url, title, content, summary, source, author,
+                   published_date, word_count, tags_json
+            FROM articles
+            WHERE indexed = 0
+            ORDER BY published_date DESC
+        """)
+
+        articles = []
+        for row in cursor.fetchall():
+            # Parse tags JSON
+            tags = []
+            if row[9]:  # tags_json
+                try:
+                    tags = json.loads(row[9])
+                except:
+                    pass
+
+            # Extract year and month from published_date
+            try:
+                if isinstance(row[7], str):
+                    pub_date = datetime.fromisoformat(row[7])
+                else:
+                    pub_date = row[7]
+                pub_year = pub_date.year
+                pub_month = pub_date.month
+            except:
+                pub_year = 0
+                pub_month = 0
+
+            article = {
+                'id': row[0],
+                'url': row[1],
+                'title': row[2],
+                'content': row[3],
+                'summary': row[4],
+                'source': row[5],
+                'author': row[6],
+                'published_date': row[7],
+                'published_year': pub_year,
+                'published_month': pub_month,
+                'word_count': row[8] or 0,
+                'tags': tags
+            }
+            articles.append(article)
+
+        return articles
+
+    def _get_next_chunk_id(self) -> int:
+        """
+        Get the next available chunk ID.
+
+        Returns:
+            Next chunk ID to use
+        """
+        conn = self.db.connect()
+        cursor = conn.cursor()
+
+        # Get max article ID
+        cursor.execute("SELECT MAX(id) FROM articles")
+        max_article_id = cursor.fetchone()[0] or 0
+
+        # Get max chunk ID from article_chunks
+        cursor.execute("SELECT MAX(id) FROM article_chunks")
+        max_chunk_id = cursor.fetchone()[0] or 0
+
+        # Return next available ID
+        return max(max_article_id, max_chunk_id) + 1
+
+    def _mark_specific_articles_indexed(self, article_ids: List[int]):
+        """
+        Mark specific articles as indexed.
+
+        Args:
+            article_ids: List of article IDs to mark
+        """
+        if not article_ids:
+            return
+
+        conn = self.db.connect()
+        cursor = conn.cursor()
+
+        placeholders = ','.join('?' * len(article_ids))
+        cursor.execute(
+            f"UPDATE articles SET indexed = 1 WHERE id IN ({placeholders})",
+            article_ids
+        )
+
+        conn.commit()
+        logger.info(f"Marked {len(article_ids)} articles as indexed")
+
     def _load_articles(self) -> List[Dict]:
         """
         Load all articles from database.
@@ -389,6 +600,44 @@ def build_index(
 
     try:
         stats = service.build_index(force=force)
+        return stats
+    finally:
+        service.close()
+
+
+def update_index(
+    db_path: str,
+    index_path: str,
+    chunk_threshold: int = 3500,
+    chunk_size: int = 1000,
+    overlap: int = 200
+) -> Dict:
+    """
+    Incrementally update txtai index with new articles.
+
+    Only indexes articles where indexed=0 in database.
+    Much faster than full rebuild for regular updates.
+
+    Args:
+        db_path: Path to SQLite database
+        index_path: Path to txtai index
+        chunk_threshold: Word count threshold for chunking
+        chunk_size: Target chunk size
+        overlap: Overlap between chunks
+
+    Returns:
+        Statistics dictionary
+    """
+    service = IndexingService(
+        db_path=db_path,
+        index_path=index_path,
+        chunk_threshold=chunk_threshold,
+        chunk_size=chunk_size,
+        overlap=overlap
+    )
+
+    try:
+        stats = service.update_index()
         return stats
     finally:
         service.close()
