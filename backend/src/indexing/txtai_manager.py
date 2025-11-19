@@ -26,28 +26,14 @@ class TxtaiManager:
         self.index_path = Path(index_path)
         self.index_path.mkdir(parents=True, exist_ok=True)
 
-        # Default configuration
+        # Default configuration for txtai 7.x
         self.config = config or {
             "path": "BAAI/bge-small-en-v1.5",
-            "content": True,
+            "content": True,  # Enable content storage in SQLite
             "keyword": True,  # Enable hybrid search (semantic + BM25)
-            "columns": {
-                "id": "INTEGER PRIMARY KEY",
-                "article_id": "INTEGER",
-                "title": "TEXT",
-                "url": "TEXT",
-                "source": "TEXT",
-                "author": "TEXT",
-                "published_date": "DATETIME",
-                "published_year": "INTEGER",
-                "published_month": "INTEGER",
-                "word_count": "INTEGER",
-                "is_chunk": "BOOLEAN",
-                "chunk_index": "INTEGER",
-                "terms": "TEXT",
-                "tags": "TEXT"
-            },
-            "faiss": {
+            # In txtai 7.x, 'columns' is just for field mapping, not SQL schema
+            # All fields in the metadata dict are automatically stored
+            "ann": {
                 "quantize": True,
                 "components": "IVF100,SQ8"
             }
