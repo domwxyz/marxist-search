@@ -60,7 +60,7 @@ const FilterPanel = ({ filters, onFilterChange, onClearFilters }) => {
             <select
               value={filters.source}
               onChange={(e) => onFilterChange('source', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-marxist-red focus:border-transparent"
             >
               <option value="">All Sources</option>
               {sources.map((source) => (
@@ -79,7 +79,7 @@ const FilterPanel = ({ filters, onFilterChange, onClearFilters }) => {
             <select
               value={filters.author}
               onChange={(e) => onFilterChange('author', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-marxist-red focus:border-transparent"
             >
               <option value="">All Authors</option>
               {authors.map((author) => (
@@ -98,7 +98,7 @@ const FilterPanel = ({ filters, onFilterChange, onClearFilters }) => {
             <select
               value={showCustomDate ? 'custom' : filters.dateRange}
               onChange={(e) => handleDateRangeChange(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-marxist-red focus:border-transparent"
             >
               {dateRanges.map((range) => (
                 <option key={range.value} value={range.value}>
@@ -120,7 +120,7 @@ const FilterPanel = ({ filters, onFilterChange, onClearFilters }) => {
                 type="date"
                 value={filters.customStartDate}
                 onChange={(e) => onFilterChange('customStartDate', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-marxist-red focus:border-transparent"
               />
             </div>
             <div>
@@ -131,7 +131,7 @@ const FilterPanel = ({ filters, onFilterChange, onClearFilters }) => {
                 type="date"
                 value={filters.customEndDate}
                 onChange={(e) => onFilterChange('customEndDate', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-marxist-red focus:border-transparent"
               />
             </div>
           </div>
@@ -142,7 +142,7 @@ const FilterPanel = ({ filters, onFilterChange, onClearFilters }) => {
           <div className="mt-4">
             <button
               onClick={onClearFilters}
-              className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+              className="text-sm text-marxist-red hover:text-red-700 font-medium"
             >
               Clear all filters
             </button>

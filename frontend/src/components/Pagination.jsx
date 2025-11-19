@@ -72,7 +72,7 @@ const Pagination = ({ currentPage, totalResults, limit, onPageChange, onLimitCha
             id="limit"
             value={limit}
             onChange={(e) => onLimitChange(Number(e.target.value))}
-            className="px-3 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="px-3 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-marxist-red focus:border-transparent"
           >
             <option value={10}>10</option>
             <option value={25}>25</option>
@@ -100,7 +100,7 @@ const Pagination = ({ currentPage, totalResults, limit, onPageChange, onLimitCha
                 className={`
                   min-w-[40px] px-3 py-2 rounded-md text-sm font-medium transition-colors
                   ${page === currentPage
-                    ? 'bg-blue-600 text-white'
+                    ? 'bg-marxist-red text-white'
                     : page === '...'
                     ? 'cursor-default text-gray-400'
                     : 'border border-gray-300 text-gray-700 bg-white hover:bg-gray-50'

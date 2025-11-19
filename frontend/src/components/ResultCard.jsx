@@ -23,7 +23,7 @@ const ResultCard = ({ result }) => {
           href={result.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="hover:text-blue-600 transition-colors"
+          className="hover:text-marxist-red transition-colors"
         >
           {result.title}
         </a>
@@ -51,12 +51,12 @@ const ResultCard = ({ result }) => {
             href={result.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-blue-600 hover:text-blue-800 font-medium text-sm"
+            className="text-marxist-red hover:text-red-700 font-medium text-sm"
           >
             Read Article →
           </a>
           {result.matched_sections > 1 && (
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
               {result.matched_sections} sections matched
             </span>
           )}

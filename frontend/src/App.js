@@ -48,61 +48,68 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200">
+      <header className="bg-marxist-red shadow-md">
         <div className="max-w-7xl mx-auto px-4 py-6">
-          <h1 className="text-3xl font-bold text-gray-900">
+          <h1 className="text-3xl font-bold text-white">
             Marxist Article Search
           </h1>
-          <p className="text-gray-600 mt-1">
+          <p className="text-red-100 mt-1">
             Search across 16,000+ articles from revolutionary communist publications
           </p>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 py-8">
+      <main className="flex-1 flex flex-col justify-center max-w-7xl mx-auto px-4 py-12 w-full">
         {/* Stats Display */}
-        <StatsDisplay />
+        <div className="mb-8">
+          <StatsDisplay />
+        </div>
 
-        {/* Search Bar */}
-        <SearchBar
-          query={query}
-          onQueryChange={setQuery}
-          onSearch={handleSearch}
-        />
-
-        {/* Filter Panel */}
-        <FilterPanel
-          filters={filters}
-          onFilterChange={updateFilter}
-          onClearFilters={clearFilters}
-        />
-
-        {/* Results List */}
-        <ResultsList
-          results={results}
-          total={total}
-          queryTime={queryTime}
-          loading={loading}
-          error={error}
-        />
-
-        {/* Pagination */}
-        {results.length > 0 && (
-          <Pagination
-            currentPage={page}
-            totalResults={total}
-            limit={filters.limit}
-            onPageChange={handlePageChange}
-            onLimitChange={handleLimitChange}
+        {/* Search Interface Container */}
+        <div className="space-y-6">
+          {/* Search Bar */}
+          <SearchBar
+            query={query}
+            onQueryChange={setQuery}
+            onSearch={handleSearch}
           />
-        )}
+
+          {/* Filter Panel */}
+          <FilterPanel
+            filters={filters}
+            onFilterChange={updateFilter}
+            onClearFilters={clearFilters}
+          />
+        </div>
+
+        {/* Results Section */}
+        <div className="mt-8">
+          <ResultsList
+            results={results}
+            total={total}
+            queryTime={queryTime}
+            loading={loading}
+            error={error}
+          />
+
+          {/* Pagination */}
+          {results.length > 0 && (
+            <Pagination
+              currentPage={page}
+              totalResults={total}
+              limit={filters.limit}
+              onPageChange={handlePageChange}
+              onLimitChange={handleLimitChange}
+            />
+          )}
+        </div>
       </main>
 
       {/* Footer */}
-      <footer className="bg-white border-t border-gray-200 mt-12">
+      <footer className="bg-white border-t border-gray-200 mt-auto">
         <div className="max-w-7xl mx-auto px-4 py-6">
           <p className="text-center text-gray-600 text-sm">
             Marxist Article Search Engine - Search across decades of revolutionary theory and analysis

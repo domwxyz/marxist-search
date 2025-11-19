@@ -46,7 +46,7 @@ const StatsDisplay = () => {
 
   return (
     <div className="w-full max-w-4xl mx-auto mb-6">
-      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4">
+      <div className="bg-gradient-to-r from-red-50 to-pink-50 border border-red-200 rounded-lg p-4">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div>
             <p className="text-sm text-gray-600">Total Articles</p>

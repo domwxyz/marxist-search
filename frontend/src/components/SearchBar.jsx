@@ -15,11 +15,11 @@ const SearchBar = ({ query, onQueryChange, onSearch }) => {
             value={query}
             onChange={(e) => onQueryChange(e.target.value)}
             placeholder="Search 16,000+ articles..."
-            className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-marxist-red focus:border-transparent text-lg"
           />
           <button
             type="submit"
-            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+            className="px-6 py-3 bg-marxist-red text-white rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-marxist-red focus:ring-offset-2 transition-colors font-semibold"
           >
             Search
           </button>
