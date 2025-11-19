@@ -272,6 +272,131 @@ def index_info(index_path):
 
 
 # ============================================================================
+# Search Commands
+# ============================================================================
+
+@cli.command()
+@click.argument('query')
+@click.option('--source', '-s', help='Filter by article source')
+@click.option('--author', '-a', help='Filter by article author')
+@click.option('--date-range', '-d', help='Date range: past_week, past_month, past_3months, past_year, 2020s, 2010s, 2000s, 1990s')
+@click.option('--start-date', help='Custom start date (YYYY-MM-DD)')
+@click.option('--end-date', help='Custom end date (YYYY-MM-DD)')
+@click.option('--limit', '-l', default=10, type=int, help='Maximum results to return')
+@click.option('--db-path', default=DATABASE_PATH, help='Database path')
+@click.option('--index-path', default=INDEX_PATH, help='Index path')
+def search(query, source, author, date_range, start_date, end_date, limit, db_path, index_path):
+    """
+    Search the indexed articles.
+
+    Example usage:
+        marxist_cli search "climate change"
+        marxist_cli search "revolution" --source "In Defence of Marxism"
+        marxist_cli search "capitalism" --date-range past_year --limit 20
+        marxist_cli search "imperialism" --author "Alan Woods"
+    """
+    from src.search.search_engine import SearchEngine
+
+    console.print(f"\n[bold cyan]Searching for:[/bold cyan] '{query}'\n")
+
+    try:
+        # Initialize search engine
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console
+        ) as progress:
+            task = progress.add_task("Loading search index...", total=None)
+
+            engine = SearchEngine(index_path=index_path, db_path=db_path)
+            engine.load_index()
+
+            progress.remove_task(task)
+
+        # Build filters
+        filters = {}
+        if source:
+            filters['source'] = source
+        if author:
+            filters['author'] = author
+        if date_range:
+            filters['date_range'] = date_range
+        if start_date:
+            filters['start_date'] = start_date
+        if end_date:
+            filters['end_date'] = end_date
+
+        # Display active filters
+        if filters:
+            console.print("[bold]Active filters:[/bold]")
+            for key, value in filters.items():
+                console.print(f"  • {key}: {value}")
+            console.print()
+
+        # Execute search
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console
+        ) as progress:
+            task = progress.add_task("Searching...", total=None)
+
+            results = engine.search(query=query, filters=filters, limit=limit)
+
+            progress.remove_task(task)
+
+        # Display results
+        console.print(f"[bold green]Found {results['total']} articles[/bold green] (showing {len(results['results'])})\n")
+        console.print(f"Query time: {results['query_time_ms']}ms\n")
+
+        if not results['results']:
+            console.print("[yellow]No results found. Try adjusting your query or filters.[/yellow]\n")
+            return
+
+        # Results table
+        for i, result in enumerate(results['results'], 1):
+            console.print(f"[bold cyan]{i}. {result['title']}[/bold cyan]")
+            console.print(f"   [dim]{result['source']} • {result['author']} • {result['published_date']}[/dim]")
+            console.print(f"   [green]Score: {result['score']:.4f}[/green]", end="")
+
+            if result.get('matched_sections', 1) > 1:
+                console.print(f" [yellow]({result['matched_sections']} sections matched)[/yellow]", end="")
+
+            if result.get('recency_boost'):
+                console.print(f" [blue]+{result['recency_boost']:.2f} recency boost[/blue]", end="")
+
+            console.print()
+
+            # Excerpt
+            excerpt = result['excerpt']
+            if len(excerpt) > 150:
+                excerpt = excerpt[:150] + "..."
+            console.print(f"   {excerpt}")
+
+            # URL
+            console.print(f"   [link={result['url']}]{result['url']}[/link]")
+            console.print()
+
+        # Pagination info
+        if results['total'] > limit:
+            console.print(f"[dim]Showing results 1-{len(results['results'])} of {results['total']} total[/dim]")
+            console.print(f"[dim]Use --limit to see more results[/dim]\n")
+
+        # Cleanup
+        engine.close()
+
+    except FileNotFoundError:
+        console.print("[red]Index not found. Run 'index build' first.[/red]\n")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"[red]Search error: {e}[/red]\n")
+        if LOG_LEVEL == "DEBUG":
+            import traceback
+            console.print(traceback.format_exc())
+        sys.exit(1)
+
+
+# ============================================================================
 # Database Commands
 # ============================================================================
 

@@ -54,12 +54,22 @@ The embedding and indexing system is fully implemented:
 - **Indexing Service**: End-to-end pipeline from database to searchable index
 - **General Purpose CLI**: Comprehensive command-line interface for all operations
 
+### ✅ Completed: Search Engine & API
+
+The search functionality is fully implemented:
+
+- **Search Engine Service**: Core search with filtering, deduplication, and recency boosting
+- **Filter System**: Support for date ranges, source, author, and custom filters
+- **Smart Deduplication**: Groups article chunks and returns highest-scoring matches
+- **FastAPI REST API**: Complete REST API with all endpoints
+- **CLI Search Command**: Test search functionality from command line
+- **Thread-Safe Operations**: Concurrent search handling with thread pool
+
 ### 🚧 TODO: Remaining Components
 
-- **Search Engine**: Implement search API with filtering and ranking
-- **FastAPI Application**: REST API endpoints for web interface
 - **Frontend**: React-based search interface
 - **Term Extraction**: Extract and track special terms/entities
+- **Incremental Updates**: Automated RSS polling and index updates
 - **Deployment**: Production deployment scripts
 
 ## Quick Start
@@ -124,11 +134,46 @@ python -m src.cli.marxist_cli index info
 python -m src.cli.marxist_cli stats
 ```
 
+#### Search Articles
+
+```bash
+# Basic search
+python -m src.cli.marxist_cli search "climate change"
+
+# Search with filters
+python -m src.cli.marxist_cli search "revolution" --source "In Defence of Marxism"
+python -m src.cli.marxist_cli search "capitalism" --date-range past_year --limit 20
+python -m src.cli.marxist_cli search "imperialism" --author "Alan Woods"
+
+# Custom date range
+python -m src.cli.marxist_cli search "palestine" --start-date 2023-01-01 --end-date 2024-12-31
+```
+
+#### Run the FastAPI Server
+
+```bash
+# Development server
+cd backend
+python -m src.api.main
+
+# Or use uvicorn directly
+uvicorn src.api.main:app --reload --host 0.0.0.0 --port 8000
+
+# Access API documentation at http://localhost:8000/docs
+```
+
+**API Endpoints**:
+- `POST /api/v1/search` - Search articles with filters
+- `GET /api/v1/top-authors` - Get top authors by article count
+- `GET /api/v1/sources` - List all article sources
+- `GET /api/v1/stats` - Get index statistics
+- `GET /api/v1/health` - Health check endpoint
+
 **Workflow**:
 1. Initialize database: `init-db`
 2. Archive articles: `archive run`
 3. Build index: `index build`
-4. Ready for search (when search API is implemented)
+4. Search articles: `search "query"` or start API server
 
 ## Project Structure
 
@@ -202,12 +247,14 @@ Edit `backend/config/rss_feeds.json` to configure RSS feeds:
 - [ ] Incremental index updates
 - [ ] Special term extraction
 
-### Phase 3: Search 📋 (Planned)
-- [ ] Search engine implementation
-- [ ] Filtering by date, source, author
-- [ ] Result ranking and deduplication
-- [ ] FastAPI endpoints
-- [ ] Search performance optimization
+### Phase 3: Search ✅ (Completed)
+- [x] Search engine implementation
+- [x] Filtering by date, source, author
+- [x] Result ranking and deduplication
+- [x] FastAPI endpoints
+- [x] CLI search command
+- [x] Thread-safe concurrent search
+- [ ] Search performance optimization (can be done later)
 
 ### Phase 4: Frontend 📋 (Planned)
 - [ ] React application setup
