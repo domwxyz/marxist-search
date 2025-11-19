@@ -26,10 +26,11 @@ This project implements a lightweight, cost-effective search engine for a 25-yea
 - trafilatura (web scraping)
 - BAAI/bge-small-en-v1.5 (embeddings)
 
-**Frontend** (TODO):
+**Frontend**:
 - React 18+
-- Vite
-- TailwindCSS
+- Create React App
+- TailwindCSS 3
+- Fetch API
 
 ## Project Status
 
@@ -65,11 +66,22 @@ The search functionality is fully implemented:
 - **CLI Search Command**: Test search functionality from command line
 - **Thread-Safe Operations**: Concurrent search handling with thread pool
 
+### ✅ Completed: Frontend
+
+The React frontend is fully implemented:
+
+- **Search Interface**: Clean, responsive search bar with debounced input
+- **Advanced Filters**: Source, author, and date range filtering
+- **Results Display**: Formatted article cards with metadata
+- **Pagination**: Configurable page size (10/25/50/100) with navigation
+- **Statistics Dashboard**: Real-time index statistics
+- **Error Handling**: User-friendly error messages
+- **API Integration**: Full integration with FastAPI backend
+
 ### 🚧 TODO: Remaining Components
 
-- **Frontend**: React-based search interface
 - **Term Extraction**: Extract and track special terms/entities
-- **Incremental Updates**: Automated RSS polling and index updates
+- **Incremental Updates**: Automated RSS polling and index updates (partially complete)
 - **Deployment**: Production deployment scripts
 
 ## Quick Start
@@ -96,8 +108,17 @@ The search functionality is fully implemented:
    pip install -r requirements.txt
    ```
 
-3. **Initialize database**:
+3. **Set up frontend**:
    ```bash
+   cd frontend
+   npm install
+   cp .env.example .env
+   # Edit .env to configure API URL if needed
+   ```
+
+4. **Initialize database**:
+   ```bash
+   cd backend
    python -m src.cli.archive_cli init-db
    ```
 
@@ -149,17 +170,30 @@ python -m src.cli.marxist_cli search "imperialism" --author "Alan Woods"
 python -m src.cli.marxist_cli search "palestine" --start-date 2023-01-01 --end-date 2024-12-31
 ```
 
-#### Run the FastAPI Server
+#### Run the Application
 
+**Backend (FastAPI Server)**:
 ```bash
-# Development server
 cd backend
+# Development server
 python -m src.api.main
 
 # Or use uvicorn directly
 uvicorn src.api.main:app --reload --host 0.0.0.0 --port 8000
 
 # Access API documentation at http://localhost:8000/docs
+```
+
+**Frontend (React App)**:
+```bash
+cd frontend
+# Development server (hot reload)
+npm start
+# Opens at http://localhost:3000
+
+# Production build
+npm run build
+# Creates optimized build in build/ folder
 ```
 
 **API Endpoints**:
@@ -169,11 +203,13 @@ uvicorn src.api.main:app --reload --host 0.0.0.0 --port 8000
 - `GET /api/v1/stats` - Get index statistics
 - `GET /api/v1/health` - Health check endpoint
 
-**Workflow**:
-1. Initialize database: `init-db`
-2. Archive articles: `archive run`
-3. Build index: `index build`
-4. Search articles: `search "query"` or start API server
+**Complete Workflow**:
+1. Initialize database: `python -m src.cli.marxist_cli init-db`
+2. Archive articles: `python -m src.cli.marxist_cli archive run`
+3. Build index: `python -m src.cli.marxist_cli index build`
+4. Start backend: `python -m src.api.main`
+5. Start frontend: `npm start` (in frontend directory)
+6. Open http://localhost:3000 in browser
 
 ## Project Structure
 
@@ -182,9 +218,9 @@ marxist-search/
 ├── backend/                    # Backend services
 │   ├── src/
 │   │   ├── ingestion/         # RSS fetching and archiving
-│   │   ├── indexing/          # Embedding and indexing (TODO)
-│   │   ├── search/            # Search functionality (TODO)
-│   │   ├── api/               # FastAPI endpoints (TODO)
+│   │   ├── indexing/          # Embedding and indexing
+│   │   ├── search/            # Search functionality
+│   │   ├── api/               # FastAPI endpoints
 │   │   └── cli/               # Command-line tools
 │   ├── config/                # Configuration files
 │   │   ├── rss_feeds.json     # RSS feed configuration
@@ -192,7 +228,16 @@ marxist-search/
 │   ├── data/                  # Data directory (gitignored)
 │   ├── requirements.txt
 │   └── README.md
-├── frontend/                   # React frontend (TODO)
+├── frontend/                   # React frontend
+│   ├── src/
+│   │   ├── components/        # React components
+│   │   ├── hooks/             # Custom hooks
+│   │   ├── utils/             # API client
+│   │   ├── App.js             # Main app
+│   │   └── index.js           # Entry point
+│   ├── public/                # Static assets
+│   ├── package.json
+│   └── README.md
 ├── marxist_search_design.txt  # Technical design document
 ├── LICENSE
 └── README.md
@@ -228,7 +273,8 @@ Edit `backend/config/rss_feeds.json` to configure RSS feeds:
 
 - **Technical Design**: See `marxist_search_design.txt` for complete system architecture
 - **Backend README**: See `backend/README.md` for detailed backend documentation
-- **API Documentation**: (TODO) Will be available at `/docs` when FastAPI is deployed
+- **Frontend README**: See `frontend/README.md` for frontend documentation
+- **API Documentation**: Available at `http://localhost:8000/docs` when backend is running
 
 ## Development Roadmap
 
@@ -256,12 +302,15 @@ Edit `backend/config/rss_feeds.json` to configure RSS feeds:
 - [x] Thread-safe concurrent search
 - [ ] Search performance optimization (can be done later)
 
-### Phase 4: Frontend 📋 (Planned)
-- [ ] React application setup
-- [ ] Search interface
-- [ ] Filter components
-- [ ] Results display
-- [ ] Pagination
+### Phase 4: Frontend ✅ (Completed)
+- [x] React application setup (Create React App + TailwindCSS)
+- [x] Search interface with debouncing
+- [x] Filter components (source, author, date)
+- [x] Results display with metadata
+- [x] Pagination with configurable page size
+- [x] Statistics dashboard
+- [x] API integration
+- [x] Error handling
 
 ### Phase 5: Deployment 📋 (Planned)
 - [ ] Production configuration
