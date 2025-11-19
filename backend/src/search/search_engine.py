@@ -171,21 +171,29 @@ class SearchEngine:
 
         Thread-safe read operation.
         """
-        # Prepare search parameters
-        params = {
-            'limit': limit
-        }
+        # Build SQL query for txtai 7.x with content storage
+        # This retrieves all metadata fields from the stored documents
+        sql_query = f"""
+            SELECT id, text, article_id, title, url, source, author,
+                   published_date, published_year, published_month,
+                   word_count, is_chunk, chunk_index, tags, terms, score
+            FROM txtai
+            WHERE similar('{query.replace("'", "''")}', {self.semantic_weight})
+        """
 
+        # Add WHERE clause if filters provided
         if where:
-            params['where'] = where
+            # Insert WHERE conditions after the similar() clause
+            sql_query = sql_query.replace(
+                f"WHERE similar('{query.replace("'", "''")}', {self.semantic_weight})",
+                f"WHERE similar('{query.replace("'", "''")}', {self.semantic_weight}) AND ({where})"
+            )
 
-        # Hybrid search weights (txtai 7.x format)
-        # Single float: 1.0 = 100% semantic, 0.0 = 100% BM25
-        # self.semantic_weight is already the correct format (e.g., 0.7)
-        params['weights'] = self.semantic_weight
+        # Add LIMIT clause
+        sql_query += f" LIMIT {limit}"
 
-        # Execute search (thread-safe)
-        results = self.embeddings.search(query, **params)
+        # Execute SQL search (thread-safe)
+        results = self.embeddings.search(sql_query)
 
         return results
 
