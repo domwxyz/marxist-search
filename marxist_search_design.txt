@@ -1,0 +1,1868 @@
+# News Article Search Engine - Technical Design Document
+
+---
+
+## Executive Summary
+
+A lightweight, cost-effective semantic search engine for a 25-year corpus of Marxist theoretical and analytical articles (~16,000 articles) sourced from the RCI/RCA/RCP (Revolutionary Communist International and related organizations) RSS feeds. The system enables users to search across news content and retrieve relevant articles without the overhead of LLM inference costs.
+
+**Key Technologies:** FastAPI, React, txtai, SQLite, trafilatura, BAAI/bge-small-en-v1.5
+
+**Deployment Target:** Single DigitalOcean droplet ($24/month, 4GB RAM, 2 vCPUs)
+
+**Concurrency Model:** Single worker process with thread pool for efficient concurrent query handling
+
+---
+
+## Project Goals
+
+### Primary Objectives
+1. **Semantic Search**: Enable natural language queries across 16,000+ news articles dating back to 1998 (earliest: 1992)
+2. **Marxist Context**: Optimized for Marxist terminology with query expansion for theoretical concepts
+2. **Cost Efficiency**: Eliminate LLM hosting costs by using local embeddings only
+3. **Fast Search**: Sub-second query response times
+4. **Concurrent Users**: Support 10-20 simultaneous users efficiently
+5. **Incremental Updates**: Automatically ingest new articles every 30 minutes without full reindexing
+6. **User-Friendly Filtering**: Simple date, source, and author filtering for non-technical users
+
+### Non-Goals
+- No chatbot or conversational interface
+- No answer generation or summarization
+- No real-time streaming updates (30-min polling is sufficient)
+- No multi-user authentication (public search interface)
+
+---
+
+## System Architecture
+
+### High-Level Component Overview
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      Client Browser                         │
+│              (React + Vite + TailwindCSS)                   │
+└────────────────────────┬────────────────────────────────────┘
+                         │ HTTP/REST
+                         │
+┌────────────────────────▼────────────────────────────────────┐
+│                    Nginx (Reverse Proxy)                    │
+│           • Serve React static files                        │
+│           • Proxy /api/* to FastAPI                         │
+│           • Rate limiting (100 req/min)                     │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+┌────────────────────────▼────────────────────────────────────┐
+│              FastAPI Application (Single Worker)            │
+│           • Async I/O for HTTP connections                  │
+│           • Thread pool (4 threads) for CPU-bound searches  │
+│           • Search endpoints                                │
+│           • Filter endpoints (authors, sources)             │
+│           • Stats endpoints                                 │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+        ┌────────────────┼────────────────┐
+        │                │                │
+┌───────▼──────┐  ┌──────▼──────┐  ┌─────▼──────┐
+│ txtai Index  │  │   SQLite    │  │   Cache    │
+│ (In-RAM)     │  │  Database   │  │  (JSON)    │
+│ Single Copy  │  │             │  │            │
+│ Shared by    │  │ • Articles  │  │ • Authors  │
+│ All Threads  │  │ • Chunks    │  │ • Sources  │
+│              │  │ • Terms     │  │            │
+│ ~2GB         │  │ ~200MB      │  │ ~1MB       │
+└──────────────┘  └─────────────┘  └────────────┘
+        ▲
+        │
+┌───────┴──────────────────────────────────────────────────────┐
+│              Background Ingestion Service                    │
+│         (Systemd Timer - Every 30 minutes)                   │
+│                                                              │
+│  1. Poll RSS feeds (feedparser) - parallel async             │
+│  2. Extract full content (trafilatura)                       │
+│  3. Extract tags from RSS feeds                              │
+│  4. Extract special terms (term_config.json matching)        │
+│  5. Chunk long articles (>3500 words)                        │
+│  6. Generate embeddings (bge-small-en-v1.5)                  │
+│  7. Update txtai index (brief write lock)                    │
+└──────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Technology Stack
+
+### Backend
+- **Framework**: FastAPI 
+- **Implementation Language**: Python 
+- **Web Server**: Uvicorn (single worker with async loop)
+- **Reverse Proxy**: Nginx
+- **Concurrency**: ThreadPoolExecutor (4 workers)
+
+### Frontend
+- **Framework**: React 
+- **Build Tool**: Vite 
+- **Styling**: TailwindCSS 
+- **HTTP Client**: Fetch API (native)
+
+### Search & Embeddings
+- **Vector Search**: txtai 
+- **Embedding Model**: BAAI/bge-small-en-v1.5 (384 dimensions)
+- **Hybrid Search**: txtai's built-in semantic + BM25
+
+### Data Storage
+- **Database**: SQLite 
+- **Index Storage**: txtai (disk-backed, RAM-loaded)
+- **Cache**: JSON files
+
+### Content Processing
+- **RSS Parsing**: feedparser 
+- **Content Extraction**: trafilatura 
+- **Text Processing**: Standard library (no spaCy)
+- **Special Term Extraction**: JSON pattern matching via term_config.json
+
+### CLI
+- **Framework**: Click 
+- **Output Formatting**: Rich 
+
+---
+
+## Concurrency & Scaling Architecture
+
+### Concurrency Model
+
+**Design Philosophy**: Single worker process with thread pool for efficient resource usage and concurrent query handling.
+
+```
+✅ Single Worker + Thread Pool:
+Worker 1: Loads 2GB index into RAM (shared by all threads)
+Thread pool: 4 threads for concurrent searches
+Total RAM: ~3.4GB (room for OS and headroom)
+```
+
+#### Thread Safety
+
+**txtai Index Operations**:
+- **Read operations** (searches): Thread-safe, no locking needed
+- Multiple threads can search simultaneously
+- FAISS releases Python GIL during C++ operations
+- **Write operations** (updates): Brief lock every 30 minutes (~100ms)
+
+#### Configuration
+
+```python
+CONCURRENCY_CONFIG = {
+    # Single Uvicorn worker process
+    "uvicorn_workers": 1,
+    
+    # Thread pool for CPU-bound search operations
+    "search_thread_pool_size": 4,
+    
+    # Maximum concurrent searches before queuing
+    "max_concurrent_searches": 10,
+    
+    # Per-query timeout
+    "search_timeout_seconds": 5.0,
+    
+    # Async I/O for RSS fetching
+    "rss_concurrent_fetches": 5
+}
+```
+
+### Performance Characteristics
+
+| Concurrent Queries | Expected Latency | Notes |
+|-------------------|------------------|-------|
+| 1 query | 50-100ms | Baseline performance |
+| 2-4 queries | 50-150ms | Parallel execution on 2 vCPUs |
+| 5-10 queries | 150-300ms | Thread pool saturated, some queuing |
+| 10-20 queries | 300-500ms | Significant queuing, near capacity |
+| 20+ queries | 500ms+ | Should scale up |
+
+**Throughput Capacity**: 200-300 searches per minute sustained load
+
+### Memory Usage Breakdown
+
+```
+Component              Memory Usage
+────────────────────────────────────
+txtai index (vectors)  ~2.0 GB
+Python runtime         ~300 MB
+SQLite cache           ~100 MB
+FastAPI app            ~200 MB
+OS + overhead          ~800 MB
+────────────────────────────────────
+Total                  ~3.4 GB
+Available (4GB)        ~600 MB headroom
+```
+
+### Scaling Strategy
+
+#### Current Capacity (4GB Droplet - $24/month)
+- **Concurrent Users**: 10-20 users
+- **Throughput**: 200-300 searches/minute
+- **CPU Utilization**: 60-80% under load
+
+#### Scaling Threshold Indicators
+
+**When to scale up:**
+- Average query time > 500ms
+- 95th percentile query time > 2 seconds
+- CPU utilization > 80% sustained
+- Frequent timeout errors (>1% of requests)
+
+#### Vertical Scaling Path
+
+| Droplet Size | RAM | vCPUs | Thread Pool | Capacity | Cost/mo |
+|--------------|-----|-------|-------------|----------|---------|
+| **Current** | 4GB | 2 | 4 threads | 10-20 users | $24 |
+| Medium | 8GB | 4 | 8 threads | 40-60 users | $48 |
+| Large | 16GB | 8 | 16 threads | 100-150 users | $96 |
+
+**Implementation for larger droplet**:
+```python
+import os
+search_thread_pool_size = os.cpu_count() * 2  # Auto-scale to CPU count
+```
+
+#### Horizontal Scaling (Not Recommended Until >100 Users)
+
+Only needed for very high traffic scenarios. Adds significant complexity:
+- Load balancer required
+- Each server needs full index copy
+- Index synchronization across servers
+- Cost multiplier (3 servers = $72/month minimum)
+
+---
+
+## Data Architecture
+
+### Database Schema (SQLite)
+
+#### Articles Table
+```sql
+CREATE TABLE articles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    url TEXT UNIQUE NOT NULL,
+    guid TEXT UNIQUE,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,            -- Full extracted article text
+    summary TEXT,                     -- RSS feed summary
+    source TEXT NOT NULL,             -- RSS feed name
+    author TEXT,
+    published_date DATETIME NOT NULL,
+    fetched_date DATETIME NOT NULL,
+    word_count INTEGER,
+    is_chunked BOOLEAN DEFAULT 0,
+    indexed BOOLEAN DEFAULT 0,
+    embedding_version TEXT DEFAULT '1.0',
+    terms_json TEXT,                  -- JSON array of extracted search terms
+    tags_json TEXT                    -- JSON array of tags/categories
+);
+
+CREATE INDEX idx_source ON articles(source);
+CREATE INDEX idx_published_date ON articles(published_date);
+CREATE INDEX idx_author ON articles(author);
+CREATE INDEX idx_indexed ON articles(indexed);
+```
+
+#### Article Chunks Table
+```sql
+CREATE TABLE article_chunks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    article_id INTEGER NOT NULL,
+    chunk_index INTEGER NOT NULL,    -- Order within article (0, 1, 2...)
+    content TEXT NOT NULL,
+    word_count INTEGER,
+    start_position INTEGER,          -- Character position in original
+    FOREIGN KEY (article_id) REFERENCES articles(id),
+    UNIQUE(article_id, chunk_index)
+);
+```
+
+#### Author Statistics Table
+```sql
+CREATE TABLE author_stats (
+    author TEXT PRIMARY KEY,
+    article_count INTEGER DEFAULT 0,
+    latest_article_date DATETIME,
+    first_article_date DATETIME
+);
+```
+
+#### RSS Feeds Table
+```sql
+CREATE TABLE rss_feeds (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    url TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    last_checked DATETIME,
+    last_modified DATETIME,          -- For If-Modified-Since headers
+    etag TEXT,                        -- For HTTP caching
+    status TEXT DEFAULT 'active',    -- 'active', 'degraded', 'failing'
+    consecutive_failures INTEGER DEFAULT 0,
+    article_count INTEGER DEFAULT 0
+);
+```
+
+#### Special Term Mentions Table
+```sql
+CREATE TABLE term_mentions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    article_id INTEGER NOT NULL,
+    term_text TEXT NOT NULL,
+    term_type TEXT,                  -- 'person', 'organization', 'place', 'concept', 'geographic'
+    mention_count INTEGER DEFAULT 1,
+    FOREIGN KEY (article_id) REFERENCES articles(id)
+);
+
+CREATE INDEX idx_term_text ON term_mentions(term_text);
+```
+
+#### Search Logs Table (Optional - Analytics)
+```sql
+CREATE TABLE search_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    query TEXT NOT NULL,
+    filters_json TEXT,
+    result_count INTEGER,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+---
+
+## txtai Configuration
+
+### Index Configuration
+```python
+{
+    # Embedding model
+    "path": "BAAI/bge-small-en-v1.5",
+    
+    # Store content with embeddings
+    "content": True,
+    
+    # Enable keyword search alongside semantic
+    "keyword": True,
+    
+    # Metadata columns for filtering
+    "columns": {
+        "id": "INTEGER PRIMARY KEY",
+        "article_id": "INTEGER",        # Original article (for chunks)
+        "title": "TEXT",
+        "url": "TEXT",
+        "source": "TEXT",
+        "author": "TEXT",
+        "published_date": "DATETIME",
+        "published_year": "INTEGER",
+        "published_month": "INTEGER",
+        "word_count": "INTEGER",
+        "is_chunk": "BOOLEAN",
+        "terms": "TEXT",                # JSON string
+        "tags": "TEXT"
+    },
+    
+    # ANN index settings
+    "faiss": {
+        "quantize": True,
+        "components": "IVF100,SQ8"
+    }
+}
+```
+
+### Embedding Model Details
+- **Model**: BAAI/bge-small-en-v1.5
+- **Dimensions**: 384
+- **Size**: ~133MB
+- **Speed**: ~4-5x faster than bge-m3
+- **Initial Indexing Time**: 3-5 hours for 16k articles (CPU)
+
+---
+
+## Content Processing Pipeline
+
+### 1. RSS Feed Polling
+- **Frequency**: Every 30 minutes via systemd timer
+- **Method**: Parallel async fetching of all feeds
+- **Caching**: Use HTTP ETag and Last-Modified headers
+- **Deduplication**: Track by URL and RSS GUID
+
+### 2. Content Extraction
+**Always use both feedparser and trafilatura:**
+- `feedparser`: Get metadata, summary, published date, GUID
+- `trafilatura`: Extract full article content, author, images, keywords
+
+### 3. Special Term Extraction
+**Method**: Keyword matching against curated JSON list
+
+**Special Terms Configuration File** (`config/terms_config.json`):
+```json
+{
+    "organizations": [
+        "United Nations",
+        "World Health Organization",
+        "European Union",
+        "NATO"
+    ],
+    "people": [
+        "Donald Trump",
+        "Joe Biden"
+    ],
+    "places": [
+        "Washington",
+        "London",
+        "Beijing"
+    ],
+    "custom_keywords": [
+        "climate change",
+        "artificial intelligence",
+        "cryptocurrency"
+    ],
+    "aliases": {
+        "WHO": "World Health Organization",
+        "UN": "United Nations",
+        "AI": "artificial intelligence",
+        "crypto": "cryptocurrency"
+    }
+}
+```
+
+**Extraction Logic**:
+- Case-insensitive matching in title + content
+- Count occurrences per article
+- Store in `terms_json` field and `term_mentions` table
+
+### 4. Chunking Strategy
+
+**Parameters**:
+- **Chunk Threshold**: 3,500 words
+- **Chunk Size**: 800 words
+- **Overlap**: 150 words
+- **Method**: Paragraph-boundary chunking (never split mid-paragraph)
+
+**Logic**:
+1. Check if article word count > 3,500
+2. If yes, split by paragraphs (`\n\n`)
+3. Group paragraphs into ~800-word chunks
+4. Maintain 150-word overlap between consecutive chunks
+5. Store chunks in `article_chunks` table
+6. Set `is_chunked=1` on parent article
+
+**Chunk Metadata in Index**:
+- Each chunk gets its own embedding
+- Chunk metadata includes `article_id` for deduplication
+- Search returns article-level results (not individual chunks)
+
+---
+
+## Search Implementation
+
+### Async Search Architecture
+
+```python
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+
+# Global thread pool for CPU-bound operations
+search_executor = ThreadPoolExecutor(max_workers=4)
+
+@app.post("/api/v1/search")
+async def search_articles(request: SearchRequest):
+    """
+    Async endpoint: handles multiple concurrent requests efficiently
+    Offloads CPU-bound txtai search to thread pool
+    """
+    # This runs in event loop (non-blocking I/O)
+    result = await asyncio.get_event_loop().run_in_executor(
+        search_executor,
+        perform_search,  # Synchronous function runs in thread
+        request.query,
+        request.filters
+    )
+    return result
+
+def perform_search(query: str, filters: dict):
+    """
+    Synchronous CPU-bound search function
+    Multiple threads can call this simultaneously
+    """
+    # Thread-safe read operation on shared index
+    results = search_engine.search(query, filters)
+    return results
+```
+
+### Thread-Safe Index Management
+
+```python
+import threading
+
+class SearchEngine:
+    def __init__(self):
+        self.index = None
+        self.rw_lock = threading.RLock()
+    
+    def load_index(self):
+        """Load index once on startup"""
+        self.index = Embeddings()
+        self.index.load("path/to/index")
+    
+    def search(self, query, filters):
+        """
+        Thread-safe read operation
+        Multiple threads can call this simultaneously
+        No lock needed - reads don't modify index
+        """
+        results = self.index.search(query, ...)
+        return results
+    
+    def update_index(self, new_articles):
+        """
+        Thread-safe write operation
+        Called by background ingestion every 30 minutes
+        Brief lock (~100ms) while adding new articles
+        """
+        with self.rw_lock:
+            # Quick incremental update
+            self.index.add(new_articles)
+            self.index.save("path/to/index")
+```
+
+### Query Processing Flow
+
+1. **Accept Query**: User submits query string + filters
+2. **Offload to Thread Pool**: FastAPI async handler sends to thread pool
+3. **Build WHERE Clause**: Convert filters to SQL
+4. **Hybrid Search**: Execute txtai search (70% semantic + 30% BM25)
+5. **Deduplicate**: Group chunks by article, keep highest score
+6. **Recency Boost**: Apply time-based boosting
+7. **Format Results**: Extract metadata, create excerpts
+8. **Return JSON**: Send to frontend
+
+### Search Scoring Formula
+
+```
+final_score = (0.7 × semantic_similarity) + (0.3 × BM25_score) + recency_boost
+
+recency_boost = {
+  0.1  if article age < 30 days
+  0.05 if article age < 90 days
+  0.02 if article age < 1 year
+  0.0  otherwise
+}
+```
+
+### Deduplication Logic
+
+When multiple chunks from the same article match:
+1. Group all results by `article_id`
+2. Keep only the highest-scoring chunk per article
+3. Mark result with `matched_sections: N` if N > 1
+4. Return article URL, not chunk-specific link
+
+### Filter Implementation
+
+#### Date Filters
+
+**UI Presets**:
+- Past Week (7 days)
+- Past Month (30 days)
+- Past 3 Months (90 days)
+- Past Year (365 days)
+- 2020-2025 (2020s)
+- 2010-2019 (2010s)
+- 2000-2009 (2000s)
+- 1990-1999 (1990s)
+- Custom range (date pickers)
+
+**Backend WHERE Clauses**:
+```sql
+-- Example for "2020-2025"
+WHERE published_year >= 2020 AND published_year <= 2025
+
+-- Example for "Past Month"
+WHERE published_date >= '2025-10-18'
+
+-- Example for custom range
+WHERE published_date BETWEEN '2020-01-01' AND '2025-12-31'
+```
+
+#### Source Filter
+```sql
+WHERE source = 'The Guardian'
+```
+
+#### Author Filter
+```sql
+WHERE author = 'Jane Smith'
+```
+
+**Combined Filters**:
+```sql
+SELECT * FROM txtai 
+WHERE source = 'The Guardian' 
+  AND author = 'Jane Smith'
+  AND published_year >= 2020
+```
+
+---
+
+## API Specification
+
+### Base URL
+```
+https://yourdomain.com/api/v1
+```
+
+### Endpoints
+
+#### POST /search
+Execute semantic search with filters.
+
+**Request Body**:
+```json
+{
+  "query": "climate change policy",
+  "filters": {
+    "source": "The Guardian",
+    "author": "Jane Smith",
+    "date_range": "2020-2025",
+    "limit": 50,
+    "offset": 0
+  }
+}
+```
+
+**Response**:
+```json
+{
+  "results": [
+    {
+      "id": 12345,
+      "title": "Article Title",
+      "url": "https://source.com/article",
+      "source": "The Guardian",
+      "author": "Jane Smith",
+      "published_date": "2025-03-15T10:30:00Z",
+      "excerpt": "First 200 characters of article...",
+      "score": 0.8523,
+      "matched_sections": 2
+    }
+  ],
+  "total": 127,
+  "page": 1,
+  "query_time_ms": 45
+}
+```
+
+#### GET /top-authors
+Get top 15 authors by article count.
+
+**Query Parameters**:
+- `min_articles` (optional, default: 10) - Minimum article count threshold
+
+**Response**:
+```json
+{
+  "authors": [
+    {
+      "name": "Jane Smith",
+      "article_count": 247,
+      "latest_article": "2025-11-15T08:00:00Z"
+    }
+  ]
+}
+```
+
+#### GET /sources
+List all RSS feed sources.
+
+**Response**:
+```json
+{
+  "sources": [
+    {
+      "name": "The Guardian",
+      "article_count": 3421,
+      "status": "active",
+      "last_updated": "2025-11-18T19:30:00Z"
+    }
+  ]
+}
+```
+
+#### GET /stats
+Get index statistics.
+
+**Response**:
+```json
+{
+  "total_articles": 15234,
+  "total_chunks": 2341,
+  "date_range": {
+    "earliest": "1992-06-15T00:00:00Z",
+    "latest": "2025-11-18T19:30:00Z"
+  },
+  "sources_count": 8,
+  "indexed_articles": 15234,
+  "index_size_mb": 1847,
+  "last_updated": "2025-11-18T19:30:00Z"
+}
+```
+
+#### GET /health
+Health check endpoint for monitoring.
+
+**Response**:
+```json
+{
+  "status": "healthy",
+  "index_loaded": true,
+  "uptime_seconds": 86400,
+  "thread_pool_active": 2,
+  "thread_pool_queued": 0
+}
+```
+
+---
+
+## Frontend Specification
+
+### Technology Stack
+- React 18+
+- Vite 5+ (build tool)
+- TailwindCSS 3+ (styling)
+- Fetch API (HTTP client)
+
+### Component Structure
+
+```
+src/
+├── components/
+│   ├── SearchBar.jsx           # Main search input
+│   ├── FilterPanel.jsx         # Date/source/author filters
+│   ├── ResultsList.jsx         # Search results display
+│   ├── ResultCard.jsx          # Individual result item
+│   ├── Pagination.jsx          # Results pagination
+│   └── StatsDisplay.jsx        # Index statistics (optional)
+├── hooks/
+│   ├── useSearch.js            # Search logic hook
+│   └── useFilters.js           # Filter state management
+├── utils/
+│   └── api.js                  # API client functions
+├── App.jsx
+└── main.jsx
+```
+
+### Search Interface Layout
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Search Bar                            │
+│  [        Search 16,000+ news articles...        ] [🔍] │
+└─────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────┐
+│                   Filter Panel                           │
+│  Source: [All Sources ▼]                                │
+│  Author: [All Authors ▼]                                │
+│  Date:   [Any Time ▼]                                   │
+└─────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────┐
+│  Results: 127 articles found                            │
+│                                                          │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ Article Title Here                                │  │
+│  │ The Guardian • Jane Smith • Mar 15, 2025         │  │
+│  │ First 200 characters of article excerpt...       │  │
+│  │ [Read Article →]                 Score: 0.85     │  │
+│  └──────────────────────────────────────────────────┘  │
+│                                                          │
+│  [← Previous]  1 2 3 4 5 ... 13  [Next →]              │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Filter UI Details
+
+**Date Dropdown**:
+```
+[Any Time ▼]
+├── Any Time
+├── Past Week
+├── Past Month
+├── Past 3 Months
+├── Past Year
+├── ──────────────
+├── 2020-2025 (2020s)
+├── 2010-2019 (2010s)
+├── 2000-2009 (2000s)
+├── 1990-1999 (1990s)
+├── ──────────────
+└── Custom range... (opens date pickers)
+```
+
+**Author Dropdown**:
+- Top 15 authors (min 10 articles each)
+- Format: "Jane Smith (247 articles)"
+- "View All Authors" link opens modal with full searchable list
+- Cached daily, loaded once on page load
+
+---
+
+## CLI Tool Specification
+
+### Commands
+
+```bash
+# Full reindex (rare, 3-5 hours)
+news-search index
+
+# Incremental update (check for new articles)
+news-search update
+
+# Search from command line
+news-search search "climate change" --source "The Guardian" --date "2020-2025" --limit 10
+
+# Show index statistics
+news-search stats
+
+# List top authors
+news-search authors --limit 20
+
+# List all RSS feed sources
+news-search sources
+
+# Test a single RSS feed
+news-search test-feed https://example.com/rss
+```
+
+### Implementation
+- **Framework**: Click
+- **Output**: Rich library for colorized, formatted output
+- **Entry Point**: `src/cli/search_cli.py`
+
+---
+
+## Deployment Specification
+
+### Infrastructure
+
+**Target**: Single DigitalOcean Droplet
+- **Plan**: $24/month
+- **Specs**: 4GB RAM, 2 vCPUs, 80GB SSD
+- **OS**: Ubuntu 24.04 LTS
+
+### File System Structure
+
+```
+/opt/news-search/               # Application code
+├── backend/
+├── frontend/dist/              # Built React app
+├── config/
+│   ├── rss_feeds.json
+│   ├── terms_config.json
+│   └── search_config.py
+└── logs/
+
+/var/lib/news-search/           # Data directory
+├── articles.db                 # SQLite database (~200MB)
+├── txtai/                      # Index files (~2GB)
+│   ├── embeddings/
+│   ├── documents/
+│   └── config/
+└── cache/
+    ├── top_authors.json
+    └── sources.json
+
+/var/log/news-search/           # Logs
+├── api.log
+├── ingestion.log
+├── search.log
+└── errors.log
+
+/var/backups/news-search/       # Backups
+├── daily/
+│   └── articles_YYYY-MM-DD.db
+└── weekly/
+    └── full_index_YYYY-MM-DD.tar.gz
+```
+
+### Services (systemd)
+
+#### 1. FastAPI Service
+**File**: `/etc/systemd/system/news-search-api.service`
+
+```ini
+[Unit]
+Description=News Search API
+After=network.target
+
+[Service]
+Type=exec
+User=newsearch
+Group=newsearch
+WorkingDirectory=/opt/news-search/backend
+Environment="PATH=/opt/news-search/venv/bin"
+ExecStart=/opt/news-search/venv/bin/uvicorn main:app \
+    --host 127.0.0.1 \
+    --port 8000 \
+    --workers 1 \
+    --loop asyncio \
+    --log-level info
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+#### 2. Ingestion Timer
+**File**: `/etc/systemd/system/news-search-update.timer`
+
+```ini
+[Unit]
+Description=News Search Update Timer
+Requires=news-search-update.service
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=30min
+Unit=news-search-update.service
+
+[Install]
+WantedBy=timers.target
+```
+
+**File**: `/etc/systemd/system/news-search-update.service`
+
+```ini
+[Unit]
+Description=News Search Update Service
+
+[Service]
+Type=oneshot
+User=newsearch
+Group=newsearch
+WorkingDirectory=/opt/news-search/backend
+Environment="PATH=/opt/news-search/venv/bin"
+ExecStart=/opt/news-search/venv/bin/python -m src.scripts.incremental_update
+StandardOutput=append:/var/log/news-search/ingestion.log
+StandardError=append:/var/log/news-search/errors.log
+```
+
+#### 3. Nginx Configuration
+**File**: `/etc/nginx/sites-available/news-search`
+
+```nginx
+upstream news_search_backend {
+    server 127.0.0.1:8000;
+    keepalive 32;
+}
+
+# Rate limiting
+limit_req_zone $binary_remote_addr zone=api:10m rate=100r/m;
+
+server {
+    listen 80;
+    server_name yourdomain.com;
+
+    # Client timeouts
+    client_body_timeout 10s;
+    client_header_timeout 10s;
+    keepalive_timeout 30s;
+
+    # React static files
+    location / {
+        root /opt/news-search/frontend/dist;
+        try_files $uri $uri/ /index.html;
+        
+        # Cache static assets
+        location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+            expires 1y;
+            add_header Cache-Control "public, immutable";
+        }
+    }
+
+    # API proxy with rate limiting
+    location /api/ {
+        limit_req zone=api burst=20 nodelay;
+        
+        proxy_pass http://news_search_backend/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # Timeouts
+        proxy_connect_timeout 5s;
+        proxy_send_timeout 10s;
+        proxy_read_timeout 10s;
+        
+        # Connection pooling
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+    }
+}
+```
+
+### Backup Strategy
+
+**Daily SQLite Backups**:
+```bash
+#!/bin/bash
+# /opt/news-search/scripts/backup_db.sh
+DATE=$(date +%Y-%m-%d)
+sqlite3 /var/lib/news-search/articles.db ".backup /var/backups/news-search/daily/articles_$DATE.db"
+find /var/backups/news-search/daily -name "*.db" -mtime +7 -delete
+```
+
+**Weekly Index Backups**:
+```bash
+#!/bin/bash
+# /opt/news-search/scripts/backup_index.sh
+DATE=$(date +%Y-%m-%d)
+tar -czf /var/backups/news-search/weekly/full_index_$DATE.tar.gz \
+    -C /var/lib/news-search txtai/ articles.db
+find /var/backups/news-search/weekly -name "*.tar.gz" -mtime +28 -delete
+```
+
+**Cron Schedule**:
+```cron
+# Daily DB backup at 2 AM
+0 2 * * * /opt/news-search/scripts/backup_db.sh
+
+# Weekly full backup on Sunday at 3 AM
+0 3 * * 0 /opt/news-search/scripts/backup_index.sh
+```
+
+**Retention**:
+- Daily DB backups: Keep 7 days
+- Weekly full backups: Keep 4 weeks
+
+---
+
+## Error Handling
+
+### RSS Feed Health Monitoring
+
+**Status Levels**:
+- `active`: Feed working normally
+- `degraded`: 3 consecutive failures
+- `failing`: 10 consecutive failures
+
+**Logic**:
+1. On successful fetch: Reset `consecutive_failures` to 0
+2. On failed fetch: Increment `consecutive_failures`
+3. If `consecutive_failures == 3`: Mark as `degraded`, continue polling every 30 min
+4. If `consecutive_failures == 10`: Mark as `failing`, reduce polling to every 6 hours
+5. Log all failures to `data/feed_errors.log`
+6. Send alert (email/webhook) when feed transitions to `failing`
+
+### API Error Responses
+
+**Standard Error Format**:
+```json
+{
+  "error": "Error message here",
+  "code": "SEARCH_FAILED",
+  "details": {
+    "query": "original query",
+    "timestamp": "2025-11-18T19:30:00Z"
+  }
+}
+```
+
+**Error Codes**:
+- `SEARCH_FAILED`: Search execution error
+- `SEARCH_TIMEOUT`: Query exceeded 5 second timeout
+- `INVALID_FILTER`: Invalid filter parameters
+- `INDEX_NOT_LOADED`: txtai index not in memory
+- `DATABASE_ERROR`: SQLite query failed
+- `RATE_LIMIT_EXCEEDED`: Too many requests (>100/min)
+
+### Timeout Handling
+
+```python
+import asyncio
+
+async def search_with_timeout(query, filters):
+    """Wrap search with timeout"""
+    try:
+        result = await asyncio.wait_for(
+            search_articles_async(query, filters),
+            timeout=5.0
+        )
+        return result
+    except asyncio.TimeoutError:
+        raise SearchTimeoutError("Query exceeded 5 second timeout")
+```
+
+---
+
+## Logging Strategy
+
+### Log Files
+
+All logs in `/var/log/news-search/`:
+
+1. **api.log**: API requests/responses, query performance
+2. **ingestion.log**: RSS fetching and article processing
+3. **search.log**: Search queries and performance metrics
+4. **errors.log**: All errors from all services
+
+### Log Format
+
+**JSON Lines** for easy parsing:
+```json
+{
+  "timestamp": "2025-11-18T19:30:00Z",
+  "level": "INFO",
+  "service": "api",
+  "message": "Search completed",
+  "details": {
+    "query": "climate change",
+    "result_count": 127,
+    "query_time_ms": 45,
+    "thread_pool_active": 2,
+    "thread_pool_queued": 1
+  }
+}
+```
+
+### Performance Logging
+
+```json
+{
+  "timestamp": "2025-11-18T19:30:00Z",
+  "level": "INFO",
+  "service": "api",
+  "message": "Search performance",
+  "details": {
+    "query_time_ms": 45,
+    "txtai_search_ms": 38,
+    "deduplication_ms": 4,
+    "formatting_ms": 3,
+    "concurrent_requests": 5,
+    "thread_pool_utilization": 0.8
+  }
+}
+```
+
+### Log Rotation
+- **Frequency**: Daily
+- **Retention**: 30 days
+- **Tool**: logrotate
+
+```
+# /etc/logrotate.d/news-search
+/var/log/news-search/*.log {
+    daily
+    rotate 30
+    compress
+    delaycompress
+    notifempty
+    create 0644 newsearch newsearch
+    sharedscripts
+    postrotate
+        systemctl reload news-search-api
+    endscript
+}
+```
+
+---
+
+## Performance Specifications
+
+### Search Performance Targets
+
+| Metric | Target | Notes |
+|--------|--------|-------|
+| Single query latency | < 100ms | 95th percentile |
+| Concurrent queries (2-4) | < 150ms | Parallel execution |
+| Concurrent queries (5-10) | < 300ms | Thread pool saturated |
+| Throughput | 200-300 queries/min | Sustained load |
+| Index load time | < 10 seconds | On API startup |
+| Memory usage | < 3.5GB | Includes index + runtime |
+
+### Initial Indexing
+- **Time**: 3-5 hours (CPU-only on 2 vCPUs)
+- **Can be accelerated**: Run on GPU instance (30-60 min) or faster CPU
+- **One-time cost**: Run locally or on temporary instance
+- **Process**: Can run offline, then copy database + index to production
+
+### Incremental Updates
+- **Frequency**: Every 30 minutes
+- **New Articles**: Typically 0-50 per update
+- **Processing Time**: < 5 minutes per update
+- **Index Update**: < 100ms write lock
+- **No downtime**: Updates don't require API restart
+
+### Monitoring Metrics
+
+**System Metrics**:
+- CPU utilization (target: < 80% sustained)
+- Memory usage (target: < 3.5GB)
+- Disk I/O (SQLite queries)
+- Network I/O (minimal)
+
+**Application Metrics**:
+- Query latency (p50, p95, p99)
+- Queries per minute
+- Thread pool active/queued
+- Concurrent requests
+- Error rate
+- RSS feed health status
+
+**Scaling Indicators** (when to upgrade):
+- CPU > 80% for > 5 minutes
+- Average query time > 500ms
+- 95th percentile > 2 seconds
+- Error rate > 1%
+- Frequent timeouts
+
+---
+
+## Development Guidelines
+
+### Project Structure
+
+```
+news-search/
+├── backend/
+│   ├── src/
+│   │   ├── api/
+│   │   │   ├── main.py
+│   │   │   ├── routes.py
+│   │   │   └── models.py
+│   │   ├── ingestion/
+│   │   │   ├── rss_fetcher.py
+│   │   │   ├── content_extractor.py
+│   │   │   └── term_extractor.py
+│   │   ├── indexing/
+│   │   │   ├── chunking.py
+│   │   │   ├── embedder.py
+│   │   │   └── txtai_manager.py
+│   │   ├── search/
+│   │   │   ├── query_processor.py
+│   │   │   ├── filters.py
+│   │   │   └── search_engine.py
+│   │   ├── cli/
+│   │   │   └── search_cli.py
+│   │   └── scripts/
+│   │       ├── initial_indexing.py
+│   │       └── incremental_update.py
+│   ├── config/
+│   │   ├── rss_feeds.json
+│   │   ├── terms_config.json
+│   │   └── search_config.py
+│   ├── tests/
+│   ├── requirements.txt
+│   └── README.md
+├── frontend/
+│   ├── src/
+│   │   ├── components/
+│   │   ├── hooks/
+│   │   ├── utils/
+│   │   ├── App.jsx
+│   │   └── main.jsx
+│   ├── public/
+│   ├── package.json
+│   └── vite.config.js
+├── data/
+│   └── .gitkeep
+└── README.md
+```
+
+### Python Dependencies
+
+**Core** (requirements.txt):
+```
+# Web Framework
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.0.0
+
+# Search & Embeddings
+txtai>=7.0.0
+sentence-transformers>=2.2.0
+torch>=2.0.0
+
+# Content Processing
+feedparser>=6.0.0
+trafilatura>=1.6.0
+lxml>=4.9.0
+
+# CLI & Utilities
+click>=8.0.0
+rich>=13.0.0
+python-dotenv>=1.0.0
+
+# Optional: Testing
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+httpx>=0.24.0  # For testing async endpoints
+```
+
+### Development Environment
+
+**Local Development**:
+1. Python 3.11+ virtual environment
+2. SQLite database in `data/articles.db`
+3. Test with subset of articles (500-1000) for faster iteration
+4. FastAPI dev server: `uvicorn main:app --reload --log-level debug`
+5. React dev server: `npm run dev` (port 5173)
+
+**Environment Variables** (.env):
+```
+# Paths
+DATABASE_PATH=data/articles.db
+INDEX_PATH=data/txtai/
+CACHE_PATH=data/cache/
+
+# API Configuration
+API_HOST=0.0.0.0
+API_PORT=8000
+LOG_LEVEL=INFO
+
+# Concurrency
+SEARCH_THREAD_POOL_SIZE=4
+MAX_CONCURRENT_SEARCHES=10
+
+# Development
+DEBUG=true
+RELOAD=true
+```
+
+### Code Quality
+- **Type Hints**: Use Python type hints everywhere for clarity
+- **Docstrings**: Google-style docstrings for all public functions
+- **Linting**: ruff (replaces flake8, black, isort)
+- **Testing**: pytest for unit tests (optional for MVP, recommended for production)
+
+### Testing Strategy
+
+**Unit Tests** (optional):
+```python
+# tests/test_search.py
+import pytest
+from src.search.search_engine import SearchEngine
+
+@pytest.fixture
+def search_engine():
+    engine = SearchEngine()
+    engine.load_test_index()  # Small test index
+    return engine
+
+def test_basic_search(search_engine):
+    results = search_engine.search("climate change", {})
+    assert len(results) > 0
+    assert results[0]["score"] > 0
+
+def test_date_filter(search_engine):
+    results = search_engine.search(
+        "technology", 
+        {"date_range": "2020-2025"}
+    )
+    for result in results:
+        assert result["published_year"] >= 2020
+```
+
+**Integration Tests**:
+```python
+# tests/test_api.py
+import pytest
+from httpx import AsyncClient
+from src.api.main import app
+
+@pytest.mark.asyncio
+async def test_search_endpoint():
+    async with AsyncClient(app=app, base_url="http://test") as client:
+        response = await client.post("/api/v1/search", json={
+            "query": "climate change",
+            "filters": {}
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert "results" in data
+        assert len(data["results"]) > 0
+```
+
+---
+
+## Security Considerations
+
+### Input Validation
+- Sanitize all search queries (prevent SQL injection via txtai)
+- Validate filter parameters (dates, sources, authors)
+- Limit query length (max 500 characters)
+- Escape special characters in user input
+
+### Rate Limiting
+
+**Nginx Level** (primary):
+```nginx
+limit_req_zone $binary_remote_addr zone=api:10m rate=100r/m;
+limit_req zone=api burst=20 nodelay;
+```
+
+**Application Level** (backup):
+```python
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+limiter = Limiter(key_func=get_remote_address)
+
+@app.post("/api/v1/search")
+@limiter.limit("100/minute")
+async def search_articles(request: Request, ...):
+    ...
+```
+
+### Data Privacy
+- No user authentication (public search)
+- No PII collection
+- Search logs are anonymous (no IP addresses stored long-term)
+- Comply with RSS feed terms of service
+- Robots.txt compliance for scraped content
+
+### HTTPS/SSL
+- Use Let's Encrypt for free SSL certificate
+- Automatic renewal via certbot
+- Redirect HTTP to HTTPS
+
+```nginx
+# Redirect HTTP to HTTPS
+server {
+    listen 80;
+    server_name yourdomain.com;
+    return 301 https://$server_name$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name yourdomain.com;
+    
+    ssl_certificate /etc/letsencrypt/live/yourdomain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/yourdomain.com/privkey.pem;
+    
+    # ... rest of config
+}
+```
+
+---
+
+## Monitoring & Maintenance
+
+### Health Checks
+- API endpoint: `GET /health` (returns 200 OK with stats)
+- Monitor response times via Nginx logs
+- Track RSS feed health status in database
+- Alert on index loading failures
+
+### Metrics to Track
+
+**Real-time** (via `/health` endpoint):
+```json
+{
+  "status": "healthy",
+  "index_loaded": true,
+  "uptime_seconds": 86400,
+  "thread_pool_active": 2,
+  "thread_pool_queued": 1,
+  "memory_usage_mb": 3200,
+  "cpu_percent": 45
+}
+```
+
+**General Analytics**:
+- Most searched Marxist terms (from term_config.json)
+- Term hit rates (which terms appear in top results)
+- Author search popularity
+- Tag distribution in search results
+- Synonym matching effectiveness
+
+**Daily Analytics**:
+- Total searches per day
+- Average query time
+- Most popular queries
+- Failed RSS fetches
+- Error rate
+
+**Weekly Review**:
+- Index size growth
+- Disk usage trends
+- RSS feed health summary
+- Top performing queries
+
+### Maintenance Tasks
+
+**Daily**:
+- Review error logs (`/var/log/news-search/errors.log`)
+- Check RSS feed health
+- Verify backups completed
+
+**Weekly**:
+- Review search analytics
+- Update special term list if needed
+- Review analytics_config.json for popular search patterns
+- Check disk space
+
+**Monthly**:
+- Review top searches (optimize term list)
+- Analyze slow queries
+- Review and update documentation
+
+**Quarterly**:
+- Consider reindexing with updated embedding model
+- Review and prune old articles if needed
+- Performance optimization review
+
+### Alerting (Optional)
+
+Simple email alerts for critical issues:
+```python
+# Send email on critical errors
+def send_alert(subject, message):
+    # Use SMTP or service like Mailgun
+    pass
+
+# Alert conditions:
+# - API down for > 5 minutes
+# - Disk usage > 90%
+# - More than 5 RSS feeds failing
+# - Error rate > 5%
+```
+
+---
+
+## Initial Setup Checklist
+
+### One-Time Setup
+
+**Infrastructure**:
+- [ ] Provision DigitalOcean droplet (4GB, 2 vCPU)
+- [ ] Configure SSH access with key-based auth
+- [ ] Set up firewall (UFW): allow 22, 80, 443
+- [ ] Install system dependencies:
+  - [ ] Python 3.11+
+  - [ ] Nginx
+  - [ ] SQLite
+  - [ ] Git
+  - [ ] Certbot (for SSL)
+
+**Application Setup**:
+- [ ] Create application user (`newsearch`)
+- [ ] Clone repository to `/opt/news-search/`
+- [ ] Create virtual environment
+- [ ] Install Python dependencies
+- [ ] Create data directories
+- [ ] Set ownership and permissions
+
+**Configuration**:
+- [ ] Configure `rss_feeds.json` with all feed URLs
+- [ ] Configure `terms_config.json` with curated keywords
+- [ ] Initialize `analytics_config.json` for search tracking
+- [ ] Set up `.env` file with configuration
+- [ ] Configure `search_config.py`
+
+**Initial Indexing** (3-5 hours):
+- [ ] Run initial indexing script on dev machine or droplet
+- [ ] Verify database created successfully
+- [ ] Verify txtai index created successfully
+- [ ] Test search functionality with CLI
+- [ ] Copy database and index to production paths
+
+**System Services**:
+- [ ] Configure systemd services (API, update timer)
+- [ ] Enable and start services
+- [ ] Verify services are running
+- [ ] Check logs for errors
+
+**Web Server**:
+- [ ] Configure Nginx
+- [ ] Set up SSL certificate (Let's Encrypt)
+- [ ] Test HTTPS access
+- [ ] Configure rate limiting
+
+**Frontend**:
+- [ ] Build React app (`npm run build`)
+- [ ] Deploy static files to Nginx directory
+- [ ] Test web interface
+
+**Backups**:
+- [ ] Set up backup scripts
+- [ ] Configure cron jobs
+- [ ] Test backup and restore
+
+**Monitoring**:
+- [ ] Set up log rotation
+- [ ] Configure health checks
+- [ ] Test alerting (if configured)
+
+**Final Testing**:
+- [ ] Test search functionality
+- [ ] Test all filters (date, source, author)
+- [ ] Test concurrent requests
+- [ ] Test incremental updates
+- [ ] Load testing (optional but recommended)
+
+---
+
+## Appendix: Configuration Files
+
+### rss_feeds.json Template
+```json
+{
+  "feeds": [
+    {
+      "name": "In Defence of Marxism",
+      "url": "https://www.marxist.com/rss.xml",
+      "enabled": true,
+      "organization": "RCI",
+      "language": "en",
+      "region": "international"
+    },
+    {
+      "name": "Revolutionary Communist Party",
+      "url": "https://www.communist.red/rss.xml",
+      "enabled": true,
+      "organization": "RCP-UK",
+      "language": "en",
+      "region": "britain"
+    },
+    {
+      "name": "Revolutionary Communists of America",
+      "url": "https://www.communistusa.org/rss.xml",
+      "enabled": true,
+      "organization": "RCA",
+      "language": "en",
+      "region": "united states"
+    }
+  ]
+}
+```
+
+### term_config.json Template
+```json
+{
+  "synonyms": {
+    "proletariat": ["working class", "workers", "wage laborers"],
+    "bourgeoisie": ["capitalist class", "ruling class", "capitalists", "bosses"],
+    "exploitation": ["surplus value", "unpaid labor", "expropriation"],
+    "dialectics": ["dialectical materialism", "contradictions", "negation"],
+    "imperialism": ["imperialist powers", "colonial domination", "neocolonialism"],
+    "revolution": ["socialist revolution", "revolutionary overthrow", "insurrection"],
+    "state": ["state apparatus", "bourgeois state", "workers state"],
+    "class struggle": ["class war", "class conflict"],
+    "capitalism": ["capitalist system", "bourgeois society"],
+    "socialism": ["socialist society", "workers democracy"],
+    "reformism": ["reformist politics", "social democracy"],
+    "opportunism": ["opportunist leadership", "class collaboration"]
+  },
+  "terms": {
+    "people": [
+      "Karl Marx", "Friedrich Engels", "Vladimir Lenin", 
+      "Leon Trotsky", "Rosa Luxemburg", "Ted Grant", "Alan Woods",
+      "Jorge Martin", "Antonio Gramsci", "Che Guevara"
+    ],
+    "organizations": [
+      "IMT", "RCI", "RCA", "RCP", "Comintern", "Fourth International",
+      "Bolsheviks", "Socialist Appeal", "La Riposte"
+    ],
+    "concepts": [
+      "permanent revolution", "transitional program", "combined development",
+      "state and revolution", "dialectical materialism", "historical materialism",
+      "surplus value", "dictatorship of the proletariat", "workers control",
+      "united front", "popular front"
+    ],
+    "geographic": [
+      "Venezuela", "China", "Russia", "Cuba", "Britain", "USA", 
+      "France", "Spain", "Greece", "Latin America", "Middle East",
+      "Soviet Union", "Pakistan", "India", "Mexico", "Argentina"
+    ],
+    "historical_events": [
+      "Russian Revolution", "October Revolution", "Spanish Civil War",
+      "Chinese Revolution", "Cuban Revolution", "May 1968",
+      "Bolshevik Revolution", "Paris Commune"
+    ]
+  }
+}
+```
+
+### analytics_config.json Template
+```json
+{
+  "tracking": {
+    "most_searched_terms": {
+      "people": {},
+      "organizations": {},
+      "concepts": {},
+      "geographic": {},
+      "historical_events": {}
+    },
+    "most_searched_authors": {},
+    "search_volume_by_date": {},
+    "popular_tags": {},
+    "tag_distribution_in_results": {},
+    "avg_results_per_search": 0.0,
+    "searches_with_no_results": [],
+    "synonym_matching_stats": {
+      "total_synonym_matches": 0,
+      "matches_by_term": {}
+    }
+  },
+  "metadata": {
+    "last_updated": "2025-11-18T00:00:00Z",
+    "total_searches_tracked": 0,
+    "tracking_start_date": "2025-11-18"
+  }
+}
+```
+
+### search_config.py Template
+```python
+import os
+
+# txtai Configuration
+TXTAI_CONFIG = {
+    "path": "BAAI/bge-small-en-v1.5",
+    "content": True,
+    "keyword": True,
+    "columns": {
+        "id": "INTEGER PRIMARY KEY",
+        "article_id": "INTEGER",
+        "title": "TEXT",
+        "url": "TEXT",
+        "source": "TEXT",
+        "author": "TEXT",
+        "published_date": "DATETIME",
+        "published_year": "INTEGER",
+        "published_month": "INTEGER",
+        "word_count": "INTEGER",
+        "is_chunk": "BOOLEAN",
+        "terms": "TEXT",
+        "tags": "TEXT"
+    },
+    "faiss": {
+        "quantize": True,
+        "components": "IVF100,SQ8"
+    }
+}
+
+# Chunking Configuration
+CHUNKING_CONFIG = {
+    "threshold_words": 3500,
+    "chunk_size_words": 1000,
+    "overlap_words": 200,
+    "prefer_section_breaks": True,  # Try to chunk on natural boundaries
+    "section_markers": ["##", "###", "\n\n"]  # Markdown/paragraph breaks
+}
+
+# Search Configuration
+SEARCH_CONFIG = {
+    "semantic_weight": 0.7,
+    "bm25_weight": 0.3,
+    "recency_boost": {
+        "30_days": 0.05,
+        "90_days": 0.02,
+        "1_year": 0.01
+    }
+}
+
+# Term Synonym Matching Configuration
+TERM_SYNONYM_CONFIG = {
+    "enabled": True,
+    "config_file": "term_config.json",
+    "matching_mode": "OR",  # Synonyms are OR'd together in queries
+    "max_synonyms_per_term": 4
+}
+
+# Analytics Configuration
+ANALYTICS_CONFIG = {
+    "enabled": True,
+    "config_file": "analytics_config.json",
+    "track_search_terms": True,
+    "track_term_hits": True,           # Track which terms from term_config appear in results
+    "track_author_popularity": True,
+    "track_tag_distribution": True,    # Track which tags appear most in search results
+    "update_interval_searches": 100,   # Update analytics file every 100 searches
+    "retention_days": 90
+}
+
+# RSS Configuration
+RSS_CONFIG = {
+    "poll_interval_minutes": 30,
+    "concurrent_fetches": 5,
+    "timeout_seconds": 30,
+    "failure_threshold_degraded": 3,
+    "failure_threshold_failing": 10
+}
+
+# Concurrency Configuration
+CONCURRENCY_CONFIG = {
+    "uvicorn_workers": 1,
+    "search_thread_pool_size": 4,
+    "max_concurrent_searches": 10,
+    "search_timeout_seconds": 5.0
+}
+
+# Paths
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.path.join(BASE_DIR, "data")
+DATABASE_PATH = os.path.join(DATA_DIR, "articles.db")
+INDEX_PATH = os.path.join(DATA_DIR, "txtai")
+CACHE_PATH = os.path.join(DATA_DIR, "cache")
+
+# Logging
+LOG_CONFIG = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "json": {
+            "class": "pythonjsonlogger.jsonlogger.JsonFormatter",
+            "format": "%(asctime)s %(name)s %(levelname)s %(message)s"
+        }
+    },
+    "handlers": {
+        "api": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": "/var/log/news-search/api.log",
+            "maxBytes": 10485760,  # 10MB
+            "backupCount": 5,
+            "formatter": "json"
+        },
+        "search": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": "/var/log/news-search/search.log",
+            "maxBytes": 10485760,
+            "backupCount": 5,
+            "formatter": "json"
+        },
+        "errors": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": "/var/log/news-search/errors.log",
+            "maxBytes": 10485760,
+            "backupCount": 5,
+            "formatter": "json"
+        }
+    },
+    "loggers": {
+        "api": {
+            "handlers": ["api"],
+            "level": "INFO"
+        },
+        "search": {
+            "handlers": ["search"],
+            "level": "INFO"
+        },
+        "errors": {
+            "handlers": ["errors"],
+            "level": "ERROR"
+        }
+    }
+}
+```
+
+---
+
+**End of Technical Design Document**
