@@ -1,0 +1,32 @@
+{
+  "feeds": [
+    {
+      "name": "In Defence of Marxism",
+      "url": "https://marxist.com/index.php?format=feed",
+      "pagination_type": "joomla",
+      "limit_increment": 5,
+      "enabled": true,
+      "organization": "RCI",
+      "language": "en",
+      "region": "international"
+    },
+    {
+      "name": "Revolutionary Communist Party",
+      "url": "https://communist.red/feed",
+      "pagination_type": "wordpress",
+      "enabled": true,
+      "organization": "RCP-UK",
+      "language": "en",
+      "region": "britain"
+    },
+    {
+      "name": "Revolutionary Communists of America",
+      "url": "https://communistusa.org/feed",
+      "pagination_type": "wordpress",
+      "enabled": true,
+      "organization": "RCA",
+      "language": "en",
+      "region": "united states"
+    }
+  ]
+}
