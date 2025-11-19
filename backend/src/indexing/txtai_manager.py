@@ -94,16 +94,16 @@ class TxtaiManager:
 
         logger.info(f"Indexing {len(documents)} documents...")
 
-        # Transform documents to txtai format
-        # txtai expects: [(id, text, metadata), ...]
+        # Transform documents to txtai 7.x format
+        # With content storage, txtai expects flat dictionaries with all fields
         txtai_docs = []
 
         for idx, doc in enumerate(documents):
-            doc_id = doc.get('id', idx)
-            text = doc.get('content', '')
-
-            # Prepare metadata
-            metadata = {
+            # Create flat dictionary with all fields
+            # In txtai 7.x, all fields are stored at the same level
+            txtai_doc = {
+                'id': doc.get('id', idx),
+                'text': doc.get('content', ''),  # 'text' is the indexed content field
                 'article_id': doc.get('article_id', doc.get('id')),
                 'title': doc.get('title', ''),
                 'url': doc.get('url', ''),
@@ -119,7 +119,7 @@ class TxtaiManager:
                 'tags': json.dumps(doc.get('tags', []))
             }
 
-            txtai_docs.append((doc_id, text, metadata))
+            txtai_docs.append(txtai_doc)
 
         # Index the documents
         self.embeddings.index(txtai_docs)
@@ -149,14 +149,15 @@ class TxtaiManager:
 
         logger.info(f"Upserting {len(documents)} documents...")
 
-        # Transform documents
+        # Transform documents to txtai 7.x format
+        # With content storage, txtai expects flat dictionaries with all fields
         txtai_docs = []
 
         for idx, doc in enumerate(documents):
-            doc_id = doc.get('id', idx)
-            text = doc.get('content', '')
-
-            metadata = {
+            # Create flat dictionary with all fields
+            txtai_doc = {
+                'id': doc.get('id', idx),
+                'text': doc.get('content', ''),  # 'text' is the indexed content field
                 'article_id': doc.get('article_id', doc.get('id')),
                 'title': doc.get('title', ''),
                 'url': doc.get('url', ''),
@@ -172,7 +173,7 @@ class TxtaiManager:
                 'tags': json.dumps(doc.get('tags', []))
             }
 
-            txtai_docs.append((doc_id, text, metadata))
+            txtai_docs.append(txtai_doc)
 
         # Upsert
         self.embeddings.upsert(txtai_docs)
