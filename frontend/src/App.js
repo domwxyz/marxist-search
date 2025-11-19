@@ -62,7 +62,7 @@ function App() {
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col justify-center max-w-7xl mx-auto px-4 py-12 w-full">
+      <main className="flex-1 flex flex-col justify-start pt-[12vh] max-w-7xl mx-auto px-4 py-12 w-full">
         {/* Stats Display */}
         <div className="mb-8">
           <StatsDisplay />
