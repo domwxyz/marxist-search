@@ -179,11 +179,10 @@ class SearchEngine:
         if where:
             params['where'] = where
 
-        # Hybrid search weights
-        params['weights'] = {
-            'semantic': self.semantic_weight,
-            'bm25': self.bm25_weight
-        }
+        # Hybrid search weights (txtai 7.x format)
+        # Single float: 1.0 = 100% semantic, 0.0 = 100% BM25
+        # self.semantic_weight is already the correct format (e.g., 0.7)
+        params['weights'] = self.semantic_weight
 
         # Execute search (thread-safe)
         results = self.embeddings.search(query, **params)
