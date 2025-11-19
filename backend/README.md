@@ -16,7 +16,7 @@ This backend service implements the archiving and search functionality for a cor
 
 ### ✅ Completed: Archiving Services
 
-The archiving portion of the backend is now fully implemented:
+The archiving portion of the backend is fully implemented:
 
 1. **RSS Feed Fetcher** (`src/ingestion/rss_fetcher.py`)
    - Pagination support for WordPress and Joomla feeds
@@ -51,11 +51,33 @@ The archiving portion of the backend is now fully implemented:
    - Processes all feeds concurrently
    - Comprehensive statistics and reporting
 
-7. **CLI Tool** (`src/cli/archive_cli.py`)
-   - Archive all feeds or single feed
-   - View statistics
-   - List configured feeds
-   - Initialize database
+### ✅ Completed: Embedding & Indexing Services
+
+The embedding and indexing system is fully implemented:
+
+1. **Article Chunking** (`src/indexing/chunking.py`)
+   - Chunks articles longer than 3,500 words
+   - Paragraph-boundary chunking (preserves natural breaks)
+   - Configurable chunk size (1,000 words) and overlap (200 words)
+   - Stores chunks in database for tracking
+
+2. **txtai Manager** (`src/indexing/txtai_manager.py`)
+   - Manages txtai embeddings index
+   - Uses BAAI/bge-small-en-v1.5 for embeddings
+   - Hybrid search (semantic + BM25 keyword search)
+   - Index persistence and loading
+
+3. **Indexing Service** (`src/indexing/indexing_service.py`)
+   - Orchestrates chunking and indexing pipeline
+   - Loads articles from database
+   - Creates embeddings for articles and chunks
+   - Updates database with indexing status
+
+4. **General Purpose CLI** (`src/cli/marxist_cli.py`)
+   - Archive management (`archive run`, `archive list`)
+   - Index management (`index build`, `index info`)
+   - Database initialization (`init-db`)
+   - Comprehensive statistics (`stats`)
 
 ## Directory Structure
 
@@ -69,10 +91,14 @@ backend/
 │   │   ├── article_storage.py     # Database storage
 │   │   ├── archiving_service.py   # Main orchestrator
 │   │   └── database.py            # Database management
+│   ├── indexing/           # Embedding and indexing
+│   │   ├── chunking.py            # Article chunking
+│   │   ├── txtai_manager.py       # txtai index manager
+│   │   └── indexing_service.py    # Index building orchestrator
 │   ├── cli/                # Command-line tools
-│   │   └── archive_cli.py         # Archiving CLI
+│   │   ├── marxist_cli.py         # General purpose CLI
+│   │   └── archive_cli.py         # Legacy archiving CLI (deprecated)
 │   ├── api/                # FastAPI endpoints (TODO)
-│   ├── indexing/           # Embedding and indexing (TODO)
 │   └── search/             # Search functionality (TODO)
 ├── config/
 │   ├── rss_feeds.json             # RSS feed configuration
@@ -108,51 +134,71 @@ backend/
 
 3. **Initialize database**:
    ```bash
-   python -m src.cli.archive_cli init-db
+   python -m src.cli.marxist_cli init-db
    ```
 
 ## Usage
 
 ### CLI Commands
 
-The archiving CLI provides several commands for managing the article archive:
+The Marxist Search CLI (`marxist_cli.py`) provides a comprehensive interface for managing the search engine.
 
-#### Archive All Feeds
+#### Database Initialization
 
 ```bash
-python -m src.cli.archive_cli archive
+# Initialize the database schema
+python -m src.cli.marxist_cli init-db
 ```
 
-This will:
-- Fetch all configured RSS feeds with pagination
-- Extract full article content
+#### Archiving Commands
+
+```bash
+# Archive all configured RSS feeds
+python -m src.cli.marxist_cli archive run
+
+# Archive a specific feed
+python -m src.cli.marxist_cli archive run --feed-url "https://www.marxist.com/rss.xml"
+
+# List all configured feeds
+python -m src.cli.marxist_cli archive list
+```
+
+The archiving process will:
+- Fetch RSS feeds with pagination support
+- Extract full article content (from RSS or web)
 - Normalize and clean text
 - Store articles in the database
 
-#### Archive Single Feed
+#### Indexing Commands
 
 ```bash
-python -m src.cli.archive_cli archive --feed-url "https://www.marxist.com/rss.xml"
+# Build txtai vector index from archived articles
+python -m src.cli.marxist_cli index build
+
+# Force rebuild of existing index
+python -m src.cli.marxist_cli index build --force
+
+# View index information
+python -m src.cli.marxist_cli index info
 ```
 
-#### View Statistics
+The indexing process will:
+- Load articles from database
+- Chunk long articles (>3,500 words)
+- Generate embeddings using bge-small-en-v1.5
+- Build and save txtai index
+
+#### Statistics
 
 ```bash
-python -m src.cli.archive_cli stats
+# View comprehensive statistics
+python -m src.cli.marxist_cli stats
 ```
 
 Shows:
-- Total article count
-- Recent articles
-- Configured feeds
-
-#### List Configured Feeds
-
-```bash
-python -m src.cli.archive_cli list-feeds
-```
-
-Displays all RSS feeds from `config/rss_feeds.json`.
+- Archive statistics (total articles, recent articles)
+- Index statistics (indexed documents, status)
+- Feed configurations
 
 ## Configuration
 
