@@ -8,6 +8,7 @@ from datetime import datetime
 import logging
 
 import feedparser
+import aiohttp
 
 logger = logging.getLogger(__name__)
 
@@ -255,7 +256,7 @@ class RSSFetcher:
         """
         for attempt in range(max_retries + 1):
             if attempt > 0:
-                wait_time = 2 ** attempt  # Exponential backoff: 2s, 4s, 8s
+                wait_time = min(2 ** attempt, 5)  # Exponential backoff: 2s, 4s, max 5s
                 logger.info(f"Retry attempt {attempt}/{max_retries} after {wait_time}s...")
                 await asyncio.sleep(wait_time)
 
@@ -270,10 +271,9 @@ class RSSFetcher:
 
     async def _fetch_feed(self, url: str) -> Optional[feedparser.FeedParserDict]:
         """
-        Fetch and parse RSS feed using feedparser's built-in HTTP handling.
+        Fetch and parse RSS feed using async aiohttp.
 
-        This uses feedparser.parse() with request_headers, which is more
-        reliable than async HTTP + parsing separately.
+        Uses aiohttp for fast async HTTP, then feedparser for parsing.
 
         Args:
             url: Feed URL to fetch
@@ -282,27 +282,38 @@ class RSSFetcher:
             Parsed feed or None on error
         """
         try:
-            # Run feedparser.parse in thread pool to avoid blocking async loop
-            loop = asyncio.get_event_loop()
-            headers = {'User-Agent': self.user_agent}
+            timeout = aiohttp.ClientTimeout(total=30)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                headers = {'User-Agent': self.user_agent}
 
-            feed = await loop.run_in_executor(
-                None,  # Use default thread pool
-                lambda: feedparser.parse(url, request_headers=headers)
-            )
+                async with session.get(url, headers=headers) as response:
+                    if response.status != 200:
+                        logger.warning(f"HTTP {response.status} for {url}")
+                        return None
 
-            # Check if feedparser encountered an error
-            if hasattr(feed, 'bozo') and feed.bozo and feed.bozo_exception:
-                logger.warning(f"Feed parse warning for {url}: {feed.bozo_exception}")
-                # Still return feed if there are entries
-                if feed.entries:
+                    content = await response.read()
+
+                    # Parse with feedparser (fast, no I/O)
+                    feed = feedparser.parse(content)
+
+                    # Check if feedparser encountered an error
+                    if hasattr(feed, 'bozo') and feed.bozo and feed.bozo_exception:
+                        logger.warning(f"Feed parse warning for {url}: {feed.bozo_exception}")
+                        # Still return feed if there are entries
+                        if feed.entries:
+                            return feed
+                        return None
+
                     return feed
-                return None
 
-            return feed
-
+        except asyncio.TimeoutError:
+            logger.warning(f"Timeout fetching {url}")
+            return None
+        except aiohttp.ClientError as e:
+            logger.warning(f"HTTP error fetching {url}: {e}")
+            return None
         except Exception as e:
-            logger.error(f"Error fetching {url}: {e}")
+            logger.error(f"Unexpected error fetching {url}: {e}")
             return None
 
     def _process_entries(
