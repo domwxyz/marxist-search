@@ -43,14 +43,21 @@ The article archiving system is fully implemented and functional:
 - **Database Schema**: Complete SQLite schema with proper indexing
 - **Article Storage**: Batch saving with duplicate detection
 - **Archiving Orchestrator**: End-to-end pipeline from RSS to database
-- **CLI Tool**: Command-line interface for testing and management
+
+### ✅ Completed: Embedding & Indexing Services
+
+The embedding and indexing system is fully implemented:
+
+- **Article Chunking**: Intelligent chunking of long articles (>3,500 words) with paragraph-boundary preservation
+- **txtai Manager**: Complete txtai integration with BAAI/bge-small-en-v1.5 embeddings
+- **Hybrid Search**: Semantic + BM25 keyword search support
+- **Indexing Service**: End-to-end pipeline from database to searchable index
+- **General Purpose CLI**: Comprehensive command-line interface for all operations
 
 ### 🚧 TODO: Remaining Components
 
-- **Embedding & Indexing**: Generate embeddings and build txtai index
-- **Chunking**: Split long articles into searchable chunks
-- **Search Engine**: Implement semantic search with filtering
-- **FastAPI Application**: REST API endpoints
+- **Search Engine**: Implement search API with filtering and ranking
+- **FastAPI Application**: REST API endpoints for web interface
 - **Frontend**: React-based search interface
 - **Term Extraction**: Extract and track special terms/entities
 - **Deployment**: Production deployment scripts
@@ -86,23 +93,42 @@ The article archiving system is fully implemented and functional:
 
 ### Usage
 
+The Marxist Search CLI provides commands for archiving and indexing:
+
 #### Archive Articles from RSS Feeds
 
 ```bash
+# Initialize database
+python -m src.cli.marxist_cli init-db
+
 # Archive all configured feeds
-python -m src.cli.archive_cli archive
+python -m src.cli.marxist_cli archive run
 
 # Archive a specific feed
-python -m src.cli.archive_cli archive --feed-url "https://www.marxist.com/rss.xml"
-
-# View statistics
-python -m src.cli.archive_cli stats
+python -m src.cli.marxist_cli archive run --feed-url "https://www.marxist.com/rss.xml"
 
 # List configured feeds
-python -m src.cli.archive_cli list-feeds
+python -m src.cli.marxist_cli archive list
 ```
 
-**Note**: The example RSS feed URLs in `config/rss_feeds.json` are placeholders. Update them with actual feed URLs before running the archiving process.
+#### Build Search Index
+
+```bash
+# Build txtai vector index from archived articles
+python -m src.cli.marxist_cli index build
+
+# View index information
+python -m src.cli.marxist_cli index info
+
+# View comprehensive statistics
+python -m src.cli.marxist_cli stats
+```
+
+**Workflow**:
+1. Initialize database: `init-db`
+2. Archive articles: `archive run`
+3. Build index: `index build`
+4. Ready for search (when search API is implemented)
 
 ## Project Structure
 
@@ -168,10 +194,11 @@ Edit `backend/config/rss_feeds.json` to configure RSS feeds:
 - [x] Database schema and storage
 - [x] CLI tools for testing
 
-### Phase 2: Indexing 🚧 (In Progress)
-- [ ] Article chunking for long documents
-- [ ] Embedding generation with bge-small-en-v1.5
-- [ ] txtai index creation and management
+### Phase 2: Indexing ✅ (Completed)
+- [x] Article chunking for long documents
+- [x] Embedding generation with bge-small-en-v1.5
+- [x] txtai index creation and management
+- [x] General purpose CLI
 - [ ] Incremental index updates
 - [ ] Special term extraction
 
