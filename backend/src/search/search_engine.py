@@ -253,11 +253,18 @@ class SearchEngine:
             # Parse date
             try:
                 if isinstance(published_date, str):
+                    # Parse ISO format and remove timezone info to make it naive
                     pub_date = datetime.fromisoformat(published_date.replace('Z', '+00:00'))
+                    # Remove timezone info to match naive datetime.now()
+                    if pub_date.tzinfo is not None:
+                        pub_date = pub_date.replace(tzinfo=None)
                 else:
                     pub_date = published_date
+                    # Ensure it's naive
+                    if hasattr(pub_date, 'tzinfo') and pub_date.tzinfo is not None:
+                        pub_date = pub_date.replace(tzinfo=None)
 
-                # Calculate age
+                # Calculate age (both datetimes are now naive)
                 age_days = (now - pub_date).days
 
                 # Apply boost
