@@ -56,7 +56,7 @@ function App() {
             Marxist Article Search
           </h1>
           <p className="text-red-100 mt-1">
-            Search across 16,000+ articles from revolutionary communist publications
+            Search publications from across the Revolutionary Communist International
           </p>
         </div>
       </header>
