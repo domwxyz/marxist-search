@@ -1,0 +1,72 @@
+import React from 'react';
+
+const ResultCard = ({ result }) => {
+  const formatDate = (dateString) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  };
+
+  const getExcerpt = (text, maxLength = 200) => {
+    if (!text) return '';
+    if (text.length <= maxLength) return text;
+    return text.substring(0, maxLength) + '...';
+  };
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg p-5 hover:shadow-md transition-shadow">
+      <h3 className="text-xl font-semibold text-gray-900 mb-2">
+        <a
+          href={result.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="hover:text-blue-600 transition-colors"
+        >
+          {result.title}
+        </a>
+      </h3>
+
+      <div className="flex items-center gap-2 text-sm text-gray-600 mb-3">
+        <span className="font-medium">{result.source}</span>
+        {result.author && (
+          <>
+            <span>•</span>
+            <span>{result.author}</span>
+          </>
+        )}
+        <span>•</span>
+        <span>{formatDate(result.published_date)}</span>
+      </div>
+
+      <p className="text-gray-700 mb-3 leading-relaxed">
+        {getExcerpt(result.excerpt)}
+      </p>
+
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <a
+            href={result.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-600 hover:text-blue-800 font-medium text-sm"
+          >
+            Read Article →
+          </a>
+          {result.matched_sections > 1 && (
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+              {result.matched_sections} sections matched
+            </span>
+          )}
+        </div>
+        <div className="text-sm text-gray-500">
+          Score: {result.score.toFixed(2)}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default ResultCard;
