@@ -322,6 +322,69 @@ def index_build(db_path, index_path, force):
         sys.exit(1)
 
 
+@index.command(name='update')
+@click.option('--db-path', '-d', default=DATABASE_PATH, help='Database path')
+@click.option('--index-path', '-i', default=INDEX_PATH, help='Index path')
+def index_update(db_path, index_path):
+    """
+    Incrementally update txtai index with new articles.
+
+    This will:
+    1. Load only unindexed articles (indexed=0) from database
+    2. Chunk long articles if needed
+    3. Add new documents to existing index (no rebuild)
+    4. Mark articles as indexed
+
+    Much faster than full rebuild for regular updates.
+    Use this after 'archive update' to make new articles searchable.
+    """
+    from src.indexing.indexing_service import update_index
+
+    console.print("\n[bold cyan]Marxist Search - Index Update[/bold cyan]\n")
+
+    try:
+        # Run incremental index update
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console
+        ) as progress:
+            task = progress.add_task("Updating index with new articles...", total=None)
+
+            stats = update_index(db_path, index_path)
+
+            progress.remove_task(task)
+
+        console.print("\n[bold green]Index Update Complete![/bold green]\n")
+
+        # Check for errors
+        if 'error' in stats:
+            console.print(f"[yellow]{stats['error']}[/yellow]")
+            console.print()
+            return
+
+        # Display results
+        table = Table(title="Update Statistics")
+        table.add_column("Metric", style="cyan")
+        table.add_column("Value", style="green")
+
+        table.add_row("Articles Processed", str(stats.get('articles_processed', 0)))
+        table.add_row("Articles Chunked", str(stats.get('articles_chunked', 0)))
+        table.add_row("Total Chunks Created", str(stats.get('chunks_created', 0)))
+        table.add_row("Total Indexed Items", str(stats.get('total_indexed', 0)))
+        table.add_row("Duration", f"{stats.get('duration_seconds', 0):.2f}s")
+
+        console.print(table)
+        console.print()
+
+    except Exception as e:
+        console.print(f"\n[red]Error updating index: {e}[/red]\n")
+        if LOG_LEVEL == "DEBUG":
+            import traceback
+            console.print(traceback.format_exc())
+        sys.exit(1)
+
+
 @index.command(name='info')
 @click.option('--index-path', '-i', default=INDEX_PATH, help='Index path')
 def index_info(index_path):
