@@ -3,13 +3,11 @@ RSS feed fetcher with pagination support for different CMS types.
 """
 
 import asyncio
-import time
 from typing import List, Dict, Set, Optional
 from datetime import datetime
 import logging
 
 import feedparser
-import aiohttp
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +72,8 @@ class RSSFetcher:
         limitstart = 0  # For Joomla
         limit_increment = feed_config.get("limit_increment", 5)
         has_more = True
+        consecutive_failures = 0  # Track consecutive failed fetches
+        max_consecutive_failures = 3  # Stop after 3 consecutive failures
 
         while has_more:
             # Build URL based on pagination type
@@ -87,13 +87,61 @@ class RSSFetcher:
 
             logger.info(f"Fetching from URL: {current_url}")
 
-            # Fetch and parse feed
-            feed = await self._fetch_feed(current_url)
+            # Fetch and parse feed with retry logic
+            feed = await self._fetch_feed_with_retry(current_url, max_retries=2)
 
-            if not feed or not feed.entries:
-                logger.info(f"No entries found on {pagination_desc}. Moving to next URL if available.")
-                has_more = False
-                break
+            # Handle failed fetch
+            if not feed:
+                consecutive_failures += 1
+                logger.warning(
+                    f"Failed to fetch {pagination_desc} "
+                    f"(consecutive failures: {consecutive_failures}/{max_consecutive_failures})"
+                )
+
+                if consecutive_failures >= max_consecutive_failures:
+                    logger.error(
+                        f"Stopping pagination after {max_consecutive_failures} consecutive failures"
+                    )
+                    has_more = False
+                    break
+
+                # Skip this page and try next one
+                if pagination_type == "joomla":
+                    limitstart += limit_increment
+                elif pagination_type == "wordpress":
+                    page += 1
+                else:
+                    has_more = False
+
+                await asyncio.sleep(1.0)  # Wait longer before retry
+                continue
+
+            # Handle empty feed
+            if not feed.entries:
+                logger.info(f"No entries found on {pagination_desc}.")
+                consecutive_failures += 1
+
+                if consecutive_failures >= max_consecutive_failures:
+                    logger.info(
+                        f"Stopping pagination after {max_consecutive_failures} "
+                        f"consecutive pages with no entries"
+                    )
+                    has_more = False
+                    break
+
+                # Try next page
+                if pagination_type == "joomla":
+                    limitstart += limit_increment
+                elif pagination_type == "wordpress":
+                    page += 1
+                else:
+                    has_more = False
+
+                await asyncio.sleep(0.5)
+                continue
+
+            # Reset failure counter on successful fetch
+            consecutive_failures = 0
 
             logger.info(f"Processing {pagination_desc}... Found {len(feed.entries)} entries.")
 
@@ -101,23 +149,24 @@ class RSSFetcher:
             new_entries = self._process_entries(feed.entries, seen_urls)
             entries.extend(new_entries)
 
-            logger.info(f"Added {len(new_entries)} new entries.")
+            logger.info(f"Added {len(new_entries)} new entries (total so far: {len(entries)}).")
 
             # Check if we should continue pagination
             if len(new_entries) == 0:
-                logger.info("No new entries found on this page.")
-                has_more = False
+                logger.info("No new entries found on this page (all duplicates).")
+                # Don't stop immediately - might be a page of all duplicates
+                # Continue to next page
+
+            # Update pagination parameters
+            if pagination_type == "joomla":
+                limitstart += limit_increment
+                logger.info(f"Moving to limitstart={limitstart}...")
+            elif pagination_type == "wordpress":
+                page += 1
+                logger.info(f"Moving to page {page}...")
             else:
-                # Update pagination parameters
-                if pagination_type == "joomla":
-                    limitstart += limit_increment
-                    logger.info(f"Moving to limitstart={limitstart}...")
-                elif pagination_type == "wordpress":
-                    page += 1
-                    logger.info(f"Moving to page {page}...")
-                else:
-                    # Standard pagination - only process first page
-                    has_more = False
+                # Standard pagination - only process first page
+                has_more = False
 
             # Check for standard RSS pagination links
             next_page = self._find_next_page_link(feed)
@@ -191,9 +240,40 @@ class RSSFetcher:
         else:
             return "first page"
 
+    async def _fetch_feed_with_retry(
+        self, url: str, max_retries: int = 2
+    ) -> Optional[feedparser.FeedParserDict]:
+        """
+        Fetch and parse RSS feed with retry logic.
+
+        Args:
+            url: Feed URL to fetch
+            max_retries: Maximum number of retry attempts
+
+        Returns:
+            Parsed feed or None on error
+        """
+        for attempt in range(max_retries + 1):
+            if attempt > 0:
+                wait_time = 2 ** attempt  # Exponential backoff: 2s, 4s, 8s
+                logger.info(f"Retry attempt {attempt}/{max_retries} after {wait_time}s...")
+                await asyncio.sleep(wait_time)
+
+            feed = await self._fetch_feed(url)
+
+            if feed:
+                return feed
+
+            logger.warning(f"Fetch attempt {attempt + 1}/{max_retries + 1} failed for {url}")
+
+        return None
+
     async def _fetch_feed(self, url: str) -> Optional[feedparser.FeedParserDict]:
         """
-        Fetch and parse RSS feed.
+        Fetch and parse RSS feed using feedparser's built-in HTTP handling.
+
+        This uses feedparser.parse() with request_headers, which is more
+        reliable than async HTTP + parsing separately.
 
         Args:
             url: Feed URL to fetch
@@ -202,20 +282,25 @@ class RSSFetcher:
             Parsed feed or None on error
         """
         try:
-            async with aiohttp.ClientSession() as session:
-                headers = {'User-Agent': self.user_agent}
-                async with session.get(url, headers=headers, timeout=30) as response:
-                    if response.status != 200:
-                        logger.warning(f"HTTP {response.status} for {url}")
-                        return None
+            # Run feedparser.parse in thread pool to avoid blocking async loop
+            loop = asyncio.get_event_loop()
+            headers = {'User-Agent': self.user_agent}
 
-                    content = await response.read()
-                    feed = feedparser.parse(content)
+            feed = await loop.run_in_executor(
+                None,  # Use default thread pool
+                lambda: feedparser.parse(url, request_headers=headers)
+            )
+
+            # Check if feedparser encountered an error
+            if hasattr(feed, 'bozo') and feed.bozo and feed.bozo_exception:
+                logger.warning(f"Feed parse warning for {url}: {feed.bozo_exception}")
+                # Still return feed if there are entries
+                if feed.entries:
                     return feed
+                return None
 
-        except asyncio.TimeoutError:
-            logger.error(f"Timeout fetching {url}")
-            return None
+            return feed
+
         except Exception as e:
             logger.error(f"Error fetching {url}: {e}")
             return None
