@@ -49,6 +49,224 @@ class RSSFetcher:
 
         return feed_results
 
+    async def fetch_new_feeds(
+        self,
+        feed_urls: List[str],
+        existing_urls: Set[str],
+        max_consecutive_duplicates: int = 5
+    ) -> Dict[str, List[Dict]]:
+        """
+        Fetch only new entries from RSS feeds (incremental update).
+
+        Stops pagination after encountering N consecutive duplicate URLs.
+        This is efficient because RSS feeds are sorted newest-first.
+
+        Args:
+            feed_urls: List of feed URLs to fetch
+            existing_urls: Set of URLs already in database
+            max_consecutive_duplicates: Stop after this many consecutive duplicates
+
+        Returns:
+            Dictionary mapping feed URLs to their new entries
+        """
+        tasks = [
+            self.fetch_new_entries(url, existing_urls, max_consecutive_duplicates)
+            for url in feed_urls
+        ]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        feed_results = {}
+        for url, result in zip(feed_urls, results):
+            if isinstance(result, Exception):
+                logger.error(f"Error fetching {url}: {result}")
+                feed_results[url] = []
+            else:
+                feed_results[url] = result
+
+        return feed_results
+
+    async def fetch_new_entries(
+        self,
+        feed_url: str,
+        existing_urls: Set[str],
+        max_consecutive_duplicates: int = 5
+    ) -> List[Dict]:
+        """
+        Fetch only new entries from a single RSS feed (incremental update).
+
+        Stops pagination after encountering N consecutive duplicate URLs.
+
+        Args:
+            feed_url: URL of the RSS feed to fetch
+            existing_urls: Set of URLs already in database
+            max_consecutive_duplicates: Stop after this many consecutive duplicates
+
+        Returns:
+            List of new feed entries
+        """
+        entries = []
+        seen_urls: Set[str] = set()
+        consecutive_duplicates = 0
+
+        logger.info(f"Fetching new articles from {feed_url}")
+
+        # Get feed configuration
+        feed_config = self.feed_configs.get(feed_url, {"pagination_type": "standard"})
+        pagination_type = feed_config.get("pagination_type", "standard")
+
+        # Initialize pagination variables
+        page = 1
+        limitstart = 0
+        limit_increment = feed_config.get("limit_increment", 5)
+        has_more = True
+        consecutive_failures = 0
+        max_consecutive_failures = 3
+
+        while has_more:
+            # Build URL based on pagination type
+            current_url = self._build_paginated_url(
+                feed_url, pagination_type, page, limitstart
+            )
+
+            pagination_desc = self._get_pagination_description(
+                pagination_type, page, limitstart
+            )
+
+            logger.info(f"Fetching from URL: {current_url}")
+
+            # Fetch and parse feed with retry logic
+            feed = await self._fetch_feed_with_retry(current_url, max_retries=2)
+
+            # Handle failed fetch
+            if not feed:
+                consecutive_failures += 1
+                logger.warning(
+                    f"Failed to fetch {pagination_desc} "
+                    f"(consecutive failures: {consecutive_failures}/{max_consecutive_failures})"
+                )
+
+                if consecutive_failures >= max_consecutive_failures:
+                    logger.error(
+                        f"Stopping pagination after {max_consecutive_failures} consecutive failures"
+                    )
+                    break
+
+                # Skip this page and try next one
+                if pagination_type == "joomla":
+                    limitstart += limit_increment
+                elif pagination_type == "wordpress":
+                    page += 1
+                else:
+                    has_more = False
+
+                await asyncio.sleep(1.0)
+                continue
+
+            # Handle empty feed
+            if not feed.entries:
+                logger.info(f"No entries found on {pagination_desc}.")
+                consecutive_failures += 1
+
+                if consecutive_failures >= max_consecutive_failures:
+                    logger.info(
+                        f"Stopping pagination after {max_consecutive_failures} "
+                        f"consecutive pages with no entries"
+                    )
+                    break
+
+                # Try next page
+                if pagination_type == "joomla":
+                    limitstart += limit_increment
+                elif pagination_type == "wordpress":
+                    page += 1
+                else:
+                    has_more = False
+
+                await asyncio.sleep(0.5)
+                continue
+
+            # Reset failure counter on successful fetch
+            consecutive_failures = 0
+
+            logger.info(f"Processing {pagination_desc}... Found {len(feed.entries)} entries.")
+
+            # Process entries and check for duplicates
+            new_entries_on_page = 0
+
+            for entry in feed.entries:
+                entry_url = entry.get('link', '')
+
+                # Skip empty URLs
+                if not entry_url:
+                    continue
+
+                # Skip if already processed in this session
+                if entry_url in seen_urls:
+                    continue
+
+                # Check if URL already exists in database
+                if entry_url in existing_urls:
+                    consecutive_duplicates += 1
+                    logger.debug(
+                        f"Duplicate found: {entry_url[:50]}... "
+                        f"({consecutive_duplicates}/{max_consecutive_duplicates})"
+                    )
+
+                    # Stop if we've hit too many consecutive duplicates
+                    if consecutive_duplicates >= max_consecutive_duplicates:
+                        logger.info(
+                            f"Stopping: found {max_consecutive_duplicates} consecutive duplicates. "
+                            f"Reached articles already in database."
+                        )
+                        has_more = False
+                        break
+
+                    continue
+
+                # This is a new entry!
+                consecutive_duplicates = 0  # Reset counter
+                seen_urls.add(entry_url)
+                entries.append(entry)
+                new_entries_on_page += 1
+
+            logger.info(
+                f"Added {new_entries_on_page} new entries "
+                f"(total new so far: {len(entries)}, "
+                f"consecutive dupes: {consecutive_duplicates})"
+            )
+
+            # Stop if we hit the duplicate threshold
+            if consecutive_duplicates >= max_consecutive_duplicates:
+                break
+
+            # Update pagination parameters
+            if pagination_type == "joomla":
+                limitstart += limit_increment
+                logger.info(f"Moving to limitstart={limitstart}...")
+            elif pagination_type == "wordpress":
+                page += 1
+                logger.info(f"Moving to page {page}...")
+            else:
+                # Standard pagination - only process first page
+                has_more = False
+
+            # Check for standard RSS pagination links
+            next_page = self._find_next_page_link(feed)
+            if next_page and next_page != current_url:
+                logger.info(f"Found 'next' link: {next_page}")
+                feed_url = next_page
+                # Reset pagination counters if switching to different URL
+                if pagination_type == "joomla":
+                    limitstart = 0
+                elif pagination_type == "wordpress":
+                    page = 1
+
+            # Respect server resources
+            await asyncio.sleep(0.2)
+
+        logger.info(f"Finished fetching new entries. Total new entries: {len(entries)}")
+        return entries
+
     async def fetch_rss_entries(self, feed_url: str) -> List[Dict]:
         """
         Fetch all entries from RSS feed with pagination support for different CMS types.

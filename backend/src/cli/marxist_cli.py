@@ -184,6 +184,89 @@ def archive_list(config):
         console.print(f"[red]Error loading feeds: {e}[/red]\n")
 
 
+@archive.command(name='update')
+@click.option('--db-path', '-d', default=DATABASE_PATH, help='Database path')
+@click.option('--config', '-c', default=RSS_FEEDS_CONFIG, help='RSS feeds config path')
+@click.option('--duplicates', default=5, type=int, help='Stop after N consecutive duplicates')
+def archive_update(db_path, config, duplicates):
+    """
+    Incremental update: fetch only new articles from RSS feeds.
+
+    This is much faster than 'archive run' because it stops fetching
+    from each feed after finding N consecutive articles that already
+    exist in the database (default: 5).
+
+    Use this for regular updates (e.g., every 30 minutes via systemd/cron).
+    """
+    from src.ingestion.archiving_service import run_update
+
+    console.print("\n[bold cyan]Marxist Search - Incremental Update[/bold cyan]\n")
+
+    # Initialize database
+    console.print("[yellow]Initializing database...[/yellow]")
+    init_database(db_path)
+    console.print("[green]✓[/green] Database initialized\n")
+
+    # Run incremental update
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console
+    ) as progress:
+        task = progress.add_task("Checking feeds for new articles...", total=None)
+
+        # Run async update
+        stats = asyncio.run(run_update(db_path, config, duplicates))
+
+        progress.remove_task(task)
+
+    # Display results
+    console.print("\n[bold green]Incremental Update Complete![/bold green]\n")
+
+    if 'error' in stats:
+        console.print(f"[red]Error: {stats['error']}[/red]")
+        return
+
+    # Create results table
+    table = Table(title="Update Statistics")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Value", style="green")
+
+    table.add_row("Feeds Processed", str(stats.get('feeds_processed', 0)))
+    table.add_row("Feeds Failed", str(stats.get('feeds_failed', 0)))
+    table.add_row("New Entries Found", str(stats.get('total_entries', 0)))
+    table.add_row("Articles Extracted", str(stats.get('articles_extracted', 0)))
+    table.add_row("Articles Saved", str(stats.get('articles_saved', 0)))
+    table.add_row("Duplicates", str(stats.get('duplicates', 0)))
+    table.add_row("Duration", f"{stats.get('duration_seconds', 0):.2f}s")
+
+    console.print(table)
+
+    # Feed-specific details
+    if stats.get('feed_details'):
+        console.print("\n[bold]Feed Details:[/bold]\n")
+
+        details_table = Table()
+        details_table.add_column("Feed", style="cyan")
+        details_table.add_column("New Entries", justify="right")
+        details_table.add_column("Extracted", justify="right")
+        details_table.add_column("Saved", justify="right", style="green")
+        details_table.add_column("Duplicates", justify="right", style="yellow")
+
+        for feed_name, details in stats['feed_details'].items():
+            details_table.add_row(
+                feed_name,
+                str(details['entries']),
+                str(details['extracted']),
+                str(details['saved']),
+                str(details['duplicates'])
+            )
+
+        console.print(details_table)
+
+    console.print()
+
+
 # ============================================================================
 # Index Commands
 # ============================================================================
