@@ -503,11 +503,9 @@ CREATE TABLE search_logs (
         "tags": "TEXT"                  # JSON string of RSS tags
     },
     
-    # ANN index settings with quantization for memory efficiency
-    "ann": {
-        "quantize": True,
-        "components": "IVF100,SQ8"
-    }
+    # Note: FAISS ANN configuration removed to avoid compatibility issues
+    # with newer versions of txtai/FAISS (nflip AttributeError with IndexIVFFlat)
+    # txtai will use its default index configuration which is compatible
 }
 ```
 
@@ -1577,11 +1575,10 @@ Available (4GB)        ~600 MB
 TXTAI_CONFIG = {
     "path": "BAAI/bge-small-en-v1.5",
     "content": True,
-    "keyword": True,
-    "ann": {
-        "quantize": True,
-        "components": "IVF100,SQ8"
-    }
+    "keyword": True
+    # Note: FAISS ANN configuration removed to avoid compatibility issues
+    # with newer versions of txtai/FAISS (nflip AttributeError with IndexIVFFlat)
+    # txtai will use its default index configuration which is compatible
 }
 
 # Search Configuration

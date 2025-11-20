@@ -488,6 +488,48 @@ The incremental update script will:
 - **Throughput**: 200-300 queries/minute
 - **Update frequency**: Every 30 minutes (configurable)
 
+## Troubleshooting
+
+### Error: 'IndexIVFFlat' object has no attribute 'nflip'
+
+If you encounter this error when searching:
+
+```
+AttributeError: 'IndexIVFFlat' object has no attribute 'nflip'.
+```
+
+**Cause**: Your txtai index was built with an older FAISS configuration (`IVF100,SQ8`) that is incompatible with newer versions of txtai/FAISS.
+
+**Solution**: Rebuild your index with the corrected configuration:
+
+```bash
+# Navigate to backend directory
+cd backend
+
+# Activate virtual environment
+# On Linux/Mac:
+source venv/bin/activate
+# On Windows:
+venv\Scripts\activate
+
+# Delete the old index
+# On Linux/Mac:
+rm -rf data/txtai
+# On Windows:
+rmdir /s /q data\txtai
+
+# Rebuild the index
+python -m src.cli.marxist_cli index build
+```
+
+The new index will use txtai's default configuration which is compatible with all versions.
+
+### Other Common Issues
+
+- **Database locked error**: Make sure only one process is accessing the database at a time
+- **Out of memory during indexing**: Try indexing in smaller batches or increase system RAM
+- **Slow search performance**: Ensure the index is loaded into RAM and check `search_thread_pool_size` in config
+
 ## Contributing
 
 This is currently a private project. For questions or issues, please refer to the technical design document.
