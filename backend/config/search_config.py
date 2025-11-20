@@ -44,11 +44,9 @@ TXTAI_CONFIG = {
         "is_chunk": "BOOLEAN",
         "terms": "TEXT",
         "tags": "TEXT"
-    },
-    "faiss": {
-        "quantize": True,
-        "components": "IVF100,SQ8"
     }
+    # Note: Removed faiss configuration to avoid nflip compatibility issues
+    # txtai will use its default index configuration which is compatible
 }
 
 # Chunking Configuration
