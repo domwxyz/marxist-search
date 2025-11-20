@@ -33,10 +33,8 @@ class TxtaiManager:
             "keyword": True,  # Enable hybrid search (semantic + BM25)
             # In txtai 7.x, 'columns' is just for field mapping, not SQL schema
             # All fields in the metadata dict are automatically stored
-            "ann": {
-                "quantize": True,
-                "components": "IVF100,SQ8"
-            }
+            # Note: Removed ann/faiss configuration to avoid nflip compatibility issues
+            # txtai will use its default index configuration which is compatible
         }
 
         self.embeddings: Optional[Embeddings] = None
