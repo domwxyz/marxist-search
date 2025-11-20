@@ -3,6 +3,7 @@ import SearchBar from './components/SearchBar';
 import FilterPanel from './components/FilterPanel';
 import ResultsList from './components/ResultsList';
 import Pagination from './components/Pagination';
+import ResultsPerPageSelector from './components/ResultsPerPageSelector';
 import StatsDisplay from './components/StatsDisplay';
 import { useSearch } from './hooks/useSearch';
 import { useFilters } from './hooks/useFilters';
@@ -87,6 +88,17 @@ function App() {
 
         {/* Results Section */}
         <div className="mt-8">
+          {/* Results Per Page Selector at Top */}
+          {results.length > 0 && (
+            <ResultsPerPageSelector
+              limit={filters.limit}
+              onLimitChange={handleLimitChange}
+              totalResults={total}
+              currentPage={page}
+              resultsCount={results.length}
+            />
+          )}
+
           <ResultsList
             results={results}
             total={total}
@@ -102,7 +114,6 @@ function App() {
               totalResults={total}
               limit={filters.limit}
               onPageChange={handlePageChange}
-              onLimitChange={handleLimitChange}
             />
           )}
         </div>
