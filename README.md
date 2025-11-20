@@ -500,7 +500,7 @@ AttributeError: 'IndexIVFFlat' object has no attribute 'nflip'.
 
 **Cause**: txtai's default backend (FAISS) has a compatibility issue where it tries to set the `nflip` parameter on `IndexIVFFlat`, which doesn't support this attribute. This occurs even without explicit FAISS configuration in newer versions of txtai/FAISS.
 
-**Solution**: Switch to the hnswlib backend instead of FAISS:
+**Solution**: Use the numpy backend (CPU-only, exact search) instead of FAISS:
 
 ```bash
 # Navigate to backend directory
@@ -512,22 +512,23 @@ source venv/bin/activate
 # On Windows:
 venv\Scripts\activate
 
-# Install/update dependencies (includes hnswlib)
-pip install -r requirements.txt
-
 # Delete the old index (if it exists)
 # On Linux/Mac:
 rm -rf data/txtai
 # On Windows:
 rmdir /s /q data\txtai
 
-# Rebuild the index with hnswlib backend
+# Rebuild the index with numpy backend
 python -m src.cli.marxist_cli index build
 ```
 
-The configuration now uses `"backend": "hnsw"` (hnswlib) instead of FAISS, which provides fast approximate nearest neighbor search without the compatibility issues.
+The configuration now uses `"backend": "numpy"` which provides CPU-only exact nearest neighbor search. Benefits:
+- **No additional dependencies** - numpy is already installed with your existing packages
+- **No FAISS issues** - completely avoids the nflip AttributeError
+- **More reliable** - exact search rather than approximate
+- **CPU-only** - no GPU complications
 
-**Alternative**: If you don't want to install hnswlib, you can use exact search with the numpy backend by changing `"backend": "hnsw"` to `"backend": "numpy"` in `backend/config/search_config.py` (slower but doesn't require additional dependencies).
+For ~16,000 articles, numpy backend should provide acceptable performance (<200ms queries). If you need faster search in the future, you can switch to `"backend": "hnsw"` which requires installing hnswlib.
 
 ### Other Common Issues
 

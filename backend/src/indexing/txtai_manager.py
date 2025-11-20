@@ -31,7 +31,7 @@ class TxtaiManager:
             "path": "BAAI/bge-small-en-v1.5",
             "content": True,  # Enable content storage in SQLite
             "keyword": True,  # Enable hybrid search (semantic + BM25)
-            "backend": "hnsw",  # Use hnsw instead of faiss to avoid nflip compatibility issues
+            "backend": "numpy",  # CPU-only exact search, no additional dependencies needed
             # In txtai 7.x, 'columns' is just for field mapping, not SQL schema
             # All fields in the metadata dict are automatically stored
         }

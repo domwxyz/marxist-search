@@ -503,9 +503,9 @@ CREATE TABLE search_logs (
         "tags": "TEXT"                  # JSON string of RSS tags
     },
 
-    # Use hnsw backend instead of faiss to avoid nflip AttributeError with IndexIVFFlat
-    # hnsw (hnswlib) provides fast approximate search without faiss compatibility issues
-    "backend": "hnsw"
+    # Use numpy backend instead of faiss to avoid nflip AttributeError
+    # numpy provides CPU-only exact search without requiring additional dependencies
+    "backend": "numpy"
 }
 ```
 
@@ -1576,9 +1576,9 @@ TXTAI_CONFIG = {
     "path": "BAAI/bge-small-en-v1.5",
     "content": True,
     "keyword": True,
-    # Use hnsw backend instead of faiss to avoid nflip AttributeError with IndexIVFFlat
-    # hnsw (hnswlib) provides fast approximate search without faiss compatibility issues
-    "backend": "hnsw"
+    # Use numpy backend instead of faiss to avoid nflip AttributeError
+    # numpy provides CPU-only exact search without requiring additional dependencies
+    "backend": "numpy"
 }
 
 # Search Configuration

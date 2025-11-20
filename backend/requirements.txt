@@ -7,7 +7,6 @@ pydantic>=2.0.0
 txtai>=7.0.0
 sentence-transformers>=2.2.0
 torch>=2.0.0
-hnswlib>=0.7.0  # Alternative ANN backend to avoid faiss nflip issues
 
 # Content Processing
 feedparser>=6.0.0

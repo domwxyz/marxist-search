@@ -30,9 +30,10 @@ TXTAI_CONFIG = {
     "path": "BAAI/bge-small-en-v1.5",
     "content": True,
     "keyword": True,
-    # Use hnsw backend instead of faiss to avoid nflip AttributeError with IndexIVFFlat
-    # hnsw (hnswlib) provides fast approximate search without faiss compatibility issues
-    "backend": "hnsw",
+    # Use numpy backend instead of faiss to avoid nflip AttributeError
+    # numpy provides CPU-only exact search without requiring additional dependencies
+    # It's slower than FAISS for very large datasets but more reliable and already installed
+    "backend": "numpy",
     "columns": {
         "id": "INTEGER PRIMARY KEY",
         "article_id": "INTEGER",
