@@ -34,7 +34,8 @@ class ArchivingService:
         self,
         db_path: str,
         rss_config_path: str,
-        min_content_length: int = 200
+        min_content_length: int = 200,
+        terms_config_path: Optional[str] = None
     ):
         """
         Initialize archiving service.
@@ -43,10 +44,12 @@ class ArchivingService:
             db_path: Path to SQLite database
             rss_config_path: Path to RSS feeds configuration JSON
             min_content_length: Minimum content length for full text detection
+            terms_config_path: Path to terms_config.json (optional)
         """
         self.db_path = db_path
         self.rss_config_path = rss_config_path
         self.min_content_length = min_content_length
+        self.terms_config_path = terms_config_path
 
         # Initialize database
         self.db = Database(db_path)
@@ -373,7 +376,7 @@ class ArchivingService:
             Statistics dictionary
         """
         conn = self.db.connect()
-        storage = ArticleStorage(conn)
+        storage = ArticleStorage(conn, terms_config_path=self.terms_config_path)
 
         # Initialize feeds in database if not already done
         feed_configs_list = [config for config in self.feed_configs.values()]
@@ -419,7 +422,8 @@ class ArchivingService:
 async def run_archiving(
     db_path: str,
     rss_config_path: str,
-    feed_url: Optional[str] = None
+    feed_url: Optional[str] = None,
+    terms_config_path: Optional[str] = None
 ) -> Dict[str, any]:
     """
     Run the archiving process.
@@ -428,11 +432,16 @@ async def run_archiving(
         db_path: Path to SQLite database
         rss_config_path: Path to RSS feeds configuration
         feed_url: Optional specific feed URL to process (None for all feeds)
+        terms_config_path: Path to terms_config.json (optional)
 
     Returns:
         Statistics dictionary
     """
-    service = ArchivingService(db_path, rss_config_path)
+    service = ArchivingService(
+        db_path,
+        rss_config_path,
+        terms_config_path=terms_config_path
+    )
 
     try:
         if feed_url:
@@ -448,7 +457,8 @@ async def run_archiving(
 async def run_update(
     db_path: str,
     rss_config_path: str,
-    max_consecutive_duplicates: int = 5
+    max_consecutive_duplicates: int = 5,
+    terms_config_path: Optional[str] = None
 ) -> Dict[str, any]:
     """
     Run incremental update to fetch only new articles.
@@ -457,11 +467,16 @@ async def run_update(
         db_path: Path to SQLite database
         rss_config_path: Path to RSS feeds configuration
         max_consecutive_duplicates: Stop after this many consecutive duplicates
+        terms_config_path: Path to terms_config.json (optional)
 
     Returns:
         Statistics dictionary
     """
-    service = ArchivingService(db_path, rss_config_path)
+    service = ArchivingService(
+        db_path,
+        rss_config_path,
+        terms_config_path=terms_config_path
+    )
 
     try:
         stats = await service.update_feeds(max_consecutive_duplicates)

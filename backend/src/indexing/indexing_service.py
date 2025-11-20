@@ -291,7 +291,7 @@ class IndexingService:
 
         cursor.execute("""
             SELECT id, url, title, content, summary, source, author,
-                   published_date, word_count, tags_json
+                   published_date, word_count, tags_json, terms_json
             FROM articles
             WHERE indexed = 0
             ORDER BY published_date DESC
@@ -304,6 +304,14 @@ class IndexingService:
             if row[9]:  # tags_json
                 try:
                     tags = json.loads(row[9])
+                except:
+                    pass
+
+            # Parse terms JSON
+            terms = []
+            if row[10]:  # terms_json
+                try:
+                    terms = json.loads(row[10])
                 except:
                     pass
 
@@ -331,7 +339,8 @@ class IndexingService:
                 'published_year': pub_year,
                 'published_month': pub_month,
                 'word_count': row[8] or 0,
-                'tags': tags
+                'tags': tags,
+                'terms': terms
             }
             articles.append(article)
 
@@ -392,7 +401,7 @@ class IndexingService:
 
         cursor.execute("""
             SELECT id, url, title, content, summary, source, author,
-                   published_date, word_count, tags_json
+                   published_date, word_count, tags_json, terms_json
             FROM articles
             ORDER BY published_date DESC
         """)
@@ -404,6 +413,14 @@ class IndexingService:
             if row[9]:  # tags_json
                 try:
                     tags = json.loads(row[9])
+                except:
+                    pass
+
+            # Parse terms JSON
+            terms = []
+            if row[10]:  # terms_json
+                try:
+                    terms = json.loads(row[10])
                 except:
                     pass
 
@@ -431,7 +448,8 @@ class IndexingService:
                 'published_year': pub_year,
                 'published_month': pub_month,
                 'word_count': row[8] or 0,
-                'tags': tags
+                'tags': tags,
+                'terms': terms
             }
             articles.append(article)
 
@@ -462,7 +480,7 @@ class IndexingService:
             'is_chunk': False,
             'chunk_index': 0,
             'tags': article.get('tags', []),
-            'terms': []  # Will be populated later with term extraction
+            'terms': article.get('terms', [])
         }
 
     def _prepare_chunk_document(
@@ -497,7 +515,7 @@ class IndexingService:
             'is_chunk': True,
             'chunk_index': chunk['chunk_index'],
             'tags': article.get('tags', []),
-            'terms': []
+            'terms': article.get('terms', [])
         }
 
     def _save_chunks(self, chunks: List[Dict]):

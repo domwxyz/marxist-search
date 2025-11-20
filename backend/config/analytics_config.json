@@ -1,0 +1,35 @@
+{
+  "tracking": {
+    "most_searched_terms": {
+      "people": {},
+      "organizations": {},
+      "concepts": {},
+      "geographic": {},
+      "historical_events": {},
+      "movements": {}
+    },
+    "most_searched_authors": {},
+    "search_volume_by_date": {},
+    "popular_tags": {},
+    "tag_distribution_in_results": {},
+    "avg_results_per_search": 0.0,
+    "searches_with_no_results": [],
+    "synonym_matching_stats": {
+      "total_synonym_matches": 0,
+      "matches_by_term": {}
+    },
+    "term_hit_rates": {
+      "people": {},
+      "organizations": {},
+      "concepts": {},
+      "geographic": {},
+      "historical_events": {},
+      "movements": {}
+    }
+  },
+  "metadata": {
+    "last_updated": "2025-01-01T00:00:00Z",
+    "total_searches_tracked": 0,
+    "tracking_start_date": "2025-01-01"
+  }
+}
