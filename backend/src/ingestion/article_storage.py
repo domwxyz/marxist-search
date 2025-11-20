@@ -6,7 +6,10 @@ import sqlite3
 import json
 from typing import List, Dict, Optional
 from datetime import datetime
+from pathlib import Path
 import logging
+
+from .term_extractor import TermExtractor
 
 logger = logging.getLogger(__name__)
 
@@ -14,14 +17,29 @@ logger = logging.getLogger(__name__)
 class ArticleStorage:
     """Manages storing articles in the SQLite database."""
 
-    def __init__(self, db_connection: sqlite3.Connection):
+    def __init__(
+        self,
+        db_connection: sqlite3.Connection,
+        terms_config_path: Optional[str] = None
+    ):
         """
         Initialize article storage.
 
         Args:
             db_connection: SQLite database connection
+            terms_config_path: Path to terms_config.json (optional)
         """
         self.db = db_connection
+        self.term_extractor = None
+
+        # Initialize term extractor if config provided
+        if terms_config_path:
+            try:
+                self.term_extractor = TermExtractor(terms_config_path)
+                logger.info("Term extractor initialized for article storage")
+            except Exception as e:
+                logger.warning(f"Could not initialize term extractor: {e}")
+                self.term_extractor = None
 
     def save_article(self, article: Dict, source: str) -> Optional[int]:
         """
@@ -51,12 +69,25 @@ class ArticleStorage:
             # Prepare tags JSON
             tags_json = json.dumps(article.get('tags_json', []))
 
+            # Extract special terms if extractor is available
+            terms_json = None
+            term_mentions = []
+
+            if self.term_extractor:
+                try:
+                    terms_json, term_mentions = self.term_extractor.extract_and_format(
+                        article['title'],
+                        article['content']
+                    )
+                except Exception as e:
+                    logger.warning(f"Error extracting terms: {e}")
+
             # Insert article
             cursor.execute("""
                 INSERT INTO articles (
                     url, guid, title, content, summary, source, author,
-                    published_date, fetched_date, word_count, tags_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    published_date, fetched_date, word_count, tags_json, terms_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 article['url'],
                 article.get('guid', ''),
@@ -68,10 +99,18 @@ class ArticleStorage:
                 article['published_date'],
                 article['fetched_date'],
                 article.get('word_count', 0),
-                tags_json
+                tags_json,
+                terms_json
             ))
 
             article_id = cursor.lastrowid
+
+            # Save term mentions if extracted
+            if term_mentions:
+                try:
+                    self._save_term_mentions(article_id, term_mentions)
+                except Exception as e:
+                    logger.warning(f"Error saving term mentions: {e}")
 
             # Update author statistics
             self._update_author_stats(
@@ -169,6 +208,33 @@ class ArticleStorage:
 
         except Exception as e:
             logger.error(f"Error updating author stats for {author}: {e}")
+
+    def _save_term_mentions(self, article_id: int, term_mentions: List[Dict]):
+        """
+        Save term mentions to database.
+
+        Args:
+            article_id: Article ID
+            term_mentions: List of term mention dictionaries
+        """
+        try:
+            cursor = self.db.cursor()
+
+            for term_info in term_mentions:
+                cursor.execute("""
+                    INSERT INTO term_mentions (article_id, term_text, term_type, mention_count)
+                    VALUES (?, ?, ?, ?)
+                """, (
+                    article_id,
+                    term_info['term_text'],
+                    term_info['term_type'],
+                    term_info['mention_count']
+                ))
+
+            logger.debug(f"Saved {len(term_mentions)} term mentions for article {article_id}")
+
+        except Exception as e:
+            logger.error(f"Error saving term mentions for article {article_id}: {e}")
 
     def update_feed_stats(self, feed_url: str, success: bool, etag: Optional[str] = None,
                          last_modified: Optional[str] = None):

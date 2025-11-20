@@ -12,6 +12,9 @@ This project implements a lightweight, cost-effective search engine for a 25-yea
 - **RSS Archiving**: Automated fetching from multiple RSS feeds with pagination support
 - **Content Extraction**: Intelligent full-text extraction using feedparser and trafilatura
 - **Text Normalization**: Clean and prepare content for accurate indexing
+- **Special Term Extraction**: Automatic extraction of Marxist terminology, people, organizations, and concepts
+- **Analytics Tracking**: Search analytics and term usage tracking
+- **Incremental Updates**: Automated RSS polling and index updates (every 30 minutes)
 - **Cost Efficient**: No LLM hosting costs, runs on single DigitalOcean droplet
 - **Fast**: Sub-second query response times with concurrent user support
 
@@ -78,11 +81,29 @@ The React frontend is fully implemented:
 - **Error Handling**: User-friendly error messages
 - **API Integration**: Full integration with FastAPI backend
 
-### 🚧 TODO: Remaining Components
+### ✅ Completed: Phase 2 Advanced Features
 
-- **Term Extraction**: Extract and track special terms/entities
-- **Incremental Updates**: Automated RSS polling and index updates (partially complete)
-- **Deployment**: Production deployment scripts
+All Phase 2 features are now complete:
+
+- **Special Term Extraction**: Automatic extraction and tracking of Marxist terminology
+  - 100+ curated terms across 6 categories (people, organizations, concepts, geographic, historical events, movements)
+  - Synonym support for query expansion (17 synonym groups)
+  - Alias resolution (e.g., "UN" → "United Nations")
+  - Term occurrence tracking in `term_mentions` table
+- **Analytics Tracking**: Comprehensive search analytics
+  - Most searched terms by category
+  - Author search popularity
+  - Search volume tracking by date
+  - Tag distribution in results
+  - Synonym matching statistics
+- **Incremental Updates**: Fully automated update system
+  - Archive updates with smart duplicate detection
+  - Index updates with `upsert` for new articles
+  - Ready for systemd timer automation (every 30 minutes)
+
+### 📋 TODO: Deployment
+
+- **Production Deployment**: Production deployment scripts and configuration
 
 ## Quick Start
 
@@ -153,6 +174,19 @@ python -m src.cli.marxist_cli index info
 
 # View comprehensive statistics
 python -m src.cli.marxist_cli stats
+```
+
+#### Incremental Updates
+
+```bash
+# Update archive with new articles (stops after 5 consecutive duplicates)
+python -m src.cli.marxist_cli archive update
+
+# Update index with new articles
+python -m src.cli.marxist_cli index update
+
+# Run both archive and index update together (recommended)
+python -m src.scripts.incremental_update
 ```
 
 #### Search Articles
@@ -269,6 +303,37 @@ Edit `backend/config/rss_feeds.json` to configure RSS feeds:
 - `joomla`: Joomla-style pagination
 - `standard`: No pagination
 
+### Special Terms Configuration
+
+Edit `backend/config/terms_config.json` to configure special term extraction:
+
+```json
+{
+  "synonyms": {
+    "proletariat": ["working class", "workers", "wage laborers"],
+    "bourgeoisie": ["capitalist class", "ruling class", "capitalists"]
+  },
+  "terms": {
+    "people": ["Karl Marx", "Friedrich Engels", "Vladimir Lenin", "Leon Trotsky"],
+    "organizations": ["IMT", "RCI", "NATO", "United Nations"],
+    "concepts": ["permanent revolution", "dialectical materialism"],
+    "geographic": ["Venezuela", "China", "Russia", "Cuba"],
+    "historical_events": ["Russian Revolution", "Spanish Civil War"],
+    "movements": ["labor movement", "climate movement"]
+  },
+  "aliases": {
+    "UN": "United Nations",
+    "IMT": "International Marxist Tendency"
+  }
+}
+```
+
+The system automatically:
+- Extracts terms from article titles and content
+- Resolves aliases to canonical terms
+- Tracks term occurrences for analytics
+- Stores terms in searchable index for improved relevance
+
 ## Documentation
 
 - **Technical Design**: See `marxist_search_design.txt` for complete system architecture
@@ -290,8 +355,8 @@ Edit `backend/config/rss_feeds.json` to configure RSS feeds:
 - [x] Embedding generation with bge-small-en-v1.5
 - [x] txtai index creation and management
 - [x] General purpose CLI
-- [ ] Incremental index updates
-- [ ] Special term extraction
+- [x] Incremental index updates
+- [x] Special term extraction
 
 ### Phase 3: Search ✅ (Completed)
 - [x] Search engine implementation
@@ -312,10 +377,10 @@ Edit `backend/config/rss_feeds.json` to configure RSS feeds:
 - [x] API integration
 - [x] Error handling
 
-### Phase 5: Deployment 📋 (Planned)
+### Phase 5: Deployment 📋 (In Progress)
 - [ ] Production configuration
 - [ ] Nginx setup
-- [ ] Systemd services
+- [x] Systemd timer for incremental updates (configuration ready)
 - [ ] Monitoring and logging
 - [ ] Backup strategy
 
@@ -338,11 +403,82 @@ The RSS fetcher intelligently handles different CMS types:
 
 ### Database Design
 
-- **Articles**: Full content and metadata
+- **Articles**: Full content and metadata with extracted special terms
 - **Article Chunks**: Chunks for long articles (>3500 words)
 - **RSS Feeds**: Feed status and health tracking
 - **Author Stats**: Article counts and date ranges
-- **Term Mentions**: Special term occurrences (for future analytics)
+- **Term Mentions**: Special term occurrences for analytics tracking
+
+### Special Term Extraction
+
+The system automatically extracts and tracks Marxist terminology:
+
+- **100+ Curated Terms**: People, organizations, concepts, geographic locations, historical events, movements
+- **Synonym Support**: Query expansion with 17+ synonym groups (e.g., "proletariat" → "working class")
+- **Alias Resolution**: Abbreviations resolved to full terms (e.g., "UN" → "United Nations")
+- **Analytics Tracking**: Term occurrence tracking for search optimization
+- **Improved Search**: Terms indexed for better semantic relevance
+
+## Automated Updates with Systemd
+
+For production deployment, set up automated incremental updates using systemd timers:
+
+### Systemd Timer Configuration
+
+**File**: `/etc/systemd/system/marxist-search-update.timer`
+
+```ini
+[Unit]
+Description=Marxist Search Incremental Update Timer
+Requires=marxist-search-update.service
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=30min
+Unit=marxist-search-update.service
+
+[Install]
+WantedBy=timers.target
+```
+
+**File**: `/etc/systemd/system/marxist-search-update.service`
+
+```ini
+[Unit]
+Description=Marxist Search Incremental Update Service
+
+[Service]
+Type=oneshot
+User=newsearch
+Group=newsearch
+WorkingDirectory=/opt/marxist-search/backend
+Environment="PATH=/opt/marxist-search/venv/bin"
+ExecStart=/opt/marxist-search/venv/bin/python -m src.scripts.incremental_update
+StandardOutput=append:/var/log/news-search/ingestion.log
+StandardError=append:/var/log/news-search/errors.log
+```
+
+### Enable and Start
+
+```bash
+# Enable the timer to start on boot
+sudo systemctl enable marxist-search-update.timer
+
+# Start the timer immediately
+sudo systemctl start marxist-search-update.timer
+
+# Check timer status
+sudo systemctl status marxist-search-update.timer
+
+# View logs
+sudo journalctl -u marxist-search-update.service -f
+```
+
+The incremental update script will:
+1. Fetch new articles from RSS feeds (stops after 5 consecutive duplicates)
+2. Extract special terms from new articles
+3. Update the txtai index with new articles
+4. Log all operations to `/var/log/news-search/ingestion.log`
 
 ## Performance Targets
 
@@ -351,6 +487,7 @@ The RSS fetcher intelligently handles different CMS types:
 - **Index size**: ~2GB in RAM
 - **Database size**: ~200MB (SQLite)
 - **Throughput**: 200-300 queries/minute
+- **Update frequency**: Every 30 minutes (configurable)
 
 ## Contributing
 
