@@ -136,16 +136,14 @@ class SearchEngine:
         # Build WHERE clause from filters
         where_clause = SearchFilters.build_where_clause(filters)
 
-        # Calculate search limit (fetch more to account for deduplication)
-        # We fetch 3x the limit to ensure we have enough after deduplication
-        search_limit = (limit + offset) * 3
-
-        # Execute txtai search
+        # Execute txtai search to get ALL results for proper total count
+        # We need to fetch enough results to ensure we get all matches after deduplication
+        # Using a large limit (10000) to capture all realistic search results
         try:
             raw_results = self._execute_txtai_search(
                 query=query,
                 where=where_clause,
-                limit=search_limit
+                limit=10000  # Large limit to get all/most results
             )
 
             logger.debug(f"txtai returned {len(raw_results)} raw results")
@@ -154,8 +152,9 @@ class SearchEngine:
             logger.error(f"Search failed: {e}")
             raise
 
-        # Deduplicate and rank results
+        # Deduplicate and rank results to get true total count
         deduplicated = self._deduplicate_results(raw_results)
+        total_count = len(deduplicated)
 
         # Apply recency boosting
         boosted = self._apply_recency_boost(deduplicated)
@@ -174,13 +173,13 @@ class SearchEngine:
 
         logger.info(
             f"Search completed: {len(formatted)} results returned, "
-            f"{len(deduplicated)} unique articles, "
+            f"{total_count} total unique articles, "
             f"{query_time_ms}ms"
         )
 
         return {
             'results': formatted,
-            'total': len(deduplicated),
+            'total': total_count,
             'page': (offset // limit) + 1 if limit > 0 else 1,
             'limit': limit,
             'offset': offset,
