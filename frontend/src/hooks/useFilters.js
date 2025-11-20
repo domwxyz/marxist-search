@@ -12,12 +12,19 @@ export const useFilters = () => {
   });
 
   const updateFilter = useCallback((key, value) => {
-    setFilters((prev) => ({
-      ...prev,
-      [key]: value,
-      // Reset offset when changing filters
-      offset: key !== 'offset' && key !== 'limit' ? 0 : prev.offset,
-    }));
+    setFilters((prev) => {
+      const newFilters = {
+        ...prev,
+        [key]: value,
+      };
+
+      // Reset offset when changing other filters (but not when updating offset or limit)
+      if (key !== 'offset' && key !== 'limit') {
+        newFilters.offset = 0;
+      }
+
+      return newFilters;
+    });
   }, []);
 
   const clearFilters = useCallback(() => {
