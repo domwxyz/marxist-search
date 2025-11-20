@@ -180,3 +180,4 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 backend/data/articles.db
+/backend/data/txtai
