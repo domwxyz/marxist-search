@@ -22,8 +22,8 @@ from rich import print as rprint
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from config.search_config import DATABASE_PATH, RSS_FEEDS_CONFIG, INDEX_PATH, LOG_LEVEL
-from src.ingestion.archiving_service import run_archiving, ArchivingService
+from config.search_config import DATABASE_PATH, RSS_FEEDS_CONFIG, INDEX_PATH, TERMS_CONFIG, LOG_LEVEL
+from src.ingestion.archiving_service import run_archiving, ArchivingService, run_update as run_archiving_update
 from src.ingestion.database import init_database
 
 console = Console()
@@ -81,7 +81,7 @@ def archive_run(feed_url, db_path, config):
             task = progress.add_task("Archiving all feeds...", total=None)
 
         # Run async archiving
-        stats = asyncio.run(run_archiving(db_path, config, feed_url))
+        stats = asyncio.run(run_archiving(db_path, config, feed_url, TERMS_CONFIG))
 
         progress.remove_task(task)
 
@@ -198,8 +198,6 @@ def archive_update(db_path, config, duplicates):
 
     Use this for regular updates (e.g., every 30 minutes via systemd/cron).
     """
-    from src.ingestion.archiving_service import run_update
-
     console.print("\n[bold cyan]Marxist Search - Incremental Update[/bold cyan]\n")
 
     # Initialize database
@@ -216,7 +214,7 @@ def archive_update(db_path, config, duplicates):
         task = progress.add_task("Checking feeds for new articles...", total=None)
 
         # Run async update
-        stats = asyncio.run(run_update(db_path, config, duplicates))
+        stats = asyncio.run(run_archiving_update(db_path, config, duplicates, TERMS_CONFIG))
 
         progress.remove_task(task)
 
@@ -570,7 +568,7 @@ def stats(db_path, config, index_path):
     console.print("\n[bold cyan]Marxist Search Statistics[/bold cyan]\n")
 
     # Archive stats
-    service = ArchivingService(db_path, config)
+    service = ArchivingService(db_path, config, terms_config_path=TERMS_CONFIG)
 
     try:
         statistics = service.get_statistics()
