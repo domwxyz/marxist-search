@@ -27,7 +27,7 @@ const FilterPanel = ({ filters, onFilterChange, onClearFilters }) => {
     { value: '', label: 'Any Time' },
     { value: 'past_week', label: 'Past Week' },
     { value: 'past_month', label: 'Past Month' },
-    { value: 'past_3_months', label: 'Past 3 Months' },
+    { value: 'past_3months', label: 'Past 3 Months' },
     { value: 'past_year', label: 'Past Year' },
     { value: '2020s', label: '2020-2025 (2020s)' },
     { value: '2010s', label: '2010-2019 (2010s)' },
