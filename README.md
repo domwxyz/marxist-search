@@ -488,6 +488,54 @@ The incremental update script will:
 - **Throughput**: 200-300 queries/minute
 - **Update frequency**: Every 30 minutes (configurable)
 
+## Troubleshooting
+
+### Error: 'IndexIVFFlat' object has no attribute 'nflip'
+
+If you encounter this error when searching:
+
+```
+AttributeError: 'IndexIVFFlat' object has no attribute 'nflip'.
+```
+
+**Cause**: txtai's default backend (FAISS) has a compatibility issue where it tries to set the `nflip` parameter on `IndexIVFFlat`, which doesn't support this attribute. This occurs even without explicit FAISS configuration in newer versions of txtai/FAISS.
+
+**Solution**: Use the numpy backend (CPU-only, exact search) instead of FAISS:
+
+```bash
+# Navigate to backend directory
+cd backend
+
+# Activate virtual environment
+# On Linux/Mac:
+source venv/bin/activate
+# On Windows:
+venv\Scripts\activate
+
+# Delete the old index (if it exists)
+# On Linux/Mac:
+rm -rf data/txtai
+# On Windows:
+rmdir /s /q data\txtai
+
+# Rebuild the index with numpy backend
+python -m src.cli.marxist_cli index build
+```
+
+The configuration now uses `"backend": "numpy"` which provides CPU-only exact nearest neighbor search. Benefits:
+- **No additional dependencies** - numpy is already installed with your existing packages
+- **No FAISS issues** - completely avoids the nflip AttributeError
+- **More reliable** - exact search rather than approximate
+- **CPU-only** - no GPU complications
+
+For ~16,000 articles, numpy backend should provide acceptable performance (<200ms queries). If you need faster search in the future, you can switch to `"backend": "hnsw"` which requires installing hnswlib.
+
+### Other Common Issues
+
+- **Database locked error**: Make sure only one process is accessing the database at a time
+- **Out of memory during indexing**: Try indexing in smaller batches or increase system RAM
+- **Slow search performance**: Ensure the index is loaded into RAM and check `search_thread_pool_size` in config
+
 ## Contributing
 
 This is currently a private project. For questions or issues, please refer to the technical design document.

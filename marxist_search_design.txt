@@ -502,12 +502,10 @@ CREATE TABLE search_logs (
         "terms": "TEXT",                # JSON string of extracted terms
         "tags": "TEXT"                  # JSON string of RSS tags
     },
-    
-    # ANN index settings with quantization for memory efficiency
-    "ann": {
-        "quantize": True,
-        "components": "IVF100,SQ8"
-    }
+
+    # Use numpy backend instead of faiss to avoid nflip AttributeError
+    # numpy provides CPU-only exact search without requiring additional dependencies
+    "backend": "numpy"
 }
 ```
 
@@ -1578,10 +1576,9 @@ TXTAI_CONFIG = {
     "path": "BAAI/bge-small-en-v1.5",
     "content": True,
     "keyword": True,
-    "ann": {
-        "quantize": True,
-        "components": "IVF100,SQ8"
-    }
+    # Use numpy backend instead of faiss to avoid nflip AttributeError
+    # numpy provides CPU-only exact search without requiring additional dependencies
+    "backend": "numpy"
 }
 
 # Search Configuration
