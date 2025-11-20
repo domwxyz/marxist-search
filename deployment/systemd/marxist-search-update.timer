@@ -1,0 +1,26 @@
+# Systemd timer for periodic article updates (every 30 minutes)
+# Copy to: /etc/systemd/system/marxist-search-update.timer
+
+[Unit]
+Description=Marxist Search Update Timer
+Documentation=https://github.com/domwxyz/marxist-search
+Requires=marxist-search-update.service
+
+[Timer]
+# Run 5 minutes after boot
+OnBootSec=5min
+
+# Run every 30 minutes
+OnUnitActiveSec=30min
+
+# Persistent - if server was down, run missed jobs
+Persistent=true
+
+# Randomize execution time by up to 2 minutes to avoid load spikes
+RandomizedDelaySec=2min
+
+# Specify the service to trigger
+Unit=marxist-search-update.service
+
+[Install]
+WantedBy=timers.target
