@@ -114,7 +114,6 @@ function App() {
               totalResults={total}
               limit={filters.limit}
               onPageChange={handlePageChange}
-              onLimitChange={handleLimitChange}
             />
           )}
         </div>
