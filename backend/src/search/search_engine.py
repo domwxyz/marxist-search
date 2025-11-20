@@ -193,11 +193,12 @@ class SearchEngine:
 
     def _expand_query(self, query: str) -> str:
         """
-        Expand query with synonyms and aliases.
+        Expand query with synonyms and aliases (bidirectional).
 
         Examples:
-        - "USSR" -> "USSR OR Soviet Union"
-        - "proletariat" -> "proletariat OR working class OR workers OR wage laborers"
+        - "USSR" -> "(USSR OR Soviet Union)"
+        - "Soviet Union" -> "(Soviet Union OR USSR)"
+        - "proletariat" -> "(proletariat OR working class OR workers OR wage laborers)"
         - "UN peacekeeping" -> "(UN OR United Nations) peacekeeping"
 
         Args:
@@ -209,18 +210,36 @@ class SearchEngine:
         if not self.term_extractor:
             return query
 
-        # Split query into words
+        # First, check for multi-word canonical terms in the query
+        # This handles cases like "Soviet Union" -> add "USSR"
+        query_lower = query.lower()
+        for canonical_lower, aliases in self.term_extractor.reverse_alias_mapping.items():
+            if canonical_lower in query_lower:
+                # Found a canonical term, add its aliases
+                original_canonical = self.term_extractor._get_original_term(canonical_lower)
+                all_variants = [original_canonical] + aliases
+                variant_clause = " OR ".join(f'"{v}"' for v in all_variants)
+                # Replace the canonical term with the OR clause
+                query = query.replace(original_canonical, f"({variant_clause})")
+                query = query.replace(canonical_lower, f"({variant_clause})")
+
+        # Then do word-by-word expansion for synonyms and single-word aliases
         words = query.split()
         expanded_parts = []
 
         for word in words:
+            # Skip if already expanded (contains parentheses)
+            if '(' in word or ')' in word:
+                expanded_parts.append(word)
+                continue
+
             # Clean word (remove punctuation for matching)
             clean_word = word.strip('.,!?;:')
 
             # Get synonyms for this word
             synonyms = self.term_extractor.get_synonyms_for_query(clean_word)
 
-            # Check if it's an alias
+            # Check if it's a single-word alias (e.g., "USSR", "UN", "IMT")
             alias_match = self.term_extractor.alias_mapping.get(clean_word.lower())
             if alias_match:
                 # Add both the alias and the canonical term

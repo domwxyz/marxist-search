@@ -66,6 +66,7 @@ class TermExtractor:
         - term_to_category: Maps each term to its category
         - compiled_patterns: Regex patterns for each term
         - alias_mapping: Maps aliases to canonical terms
+        - reverse_alias_mapping: Maps canonical terms to their aliases
         """
         self.term_to_category = {}
         self.compiled_patterns = {}
@@ -85,14 +86,22 @@ class TermExtractor:
                 )
 
         # Build alias mapping (lowercase for case-insensitive lookup)
+        # alias -> canonical
         self.alias_mapping = {
             alias.lower(): canonical.lower()
             for alias, canonical in self.aliases.items()
         }
 
+        # Build reverse alias mapping (canonical -> list of aliases)
+        # This allows searching "Soviet Union" to also find "USSR"
+        self.reverse_alias_mapping = defaultdict(list)
+        for alias, canonical in self.aliases.items():
+            self.reverse_alias_mapping[canonical.lower()].append(alias)
+
         logger.debug(f"Built lookup structures: "
                     f"{len(self.term_to_category)} terms, "
-                    f"{len(self.alias_mapping)} aliases")
+                    f"{len(self.alias_mapping)} aliases, "
+                    f"{len(self.reverse_alias_mapping)} reverse aliases")
 
     def extract_terms(
         self,
