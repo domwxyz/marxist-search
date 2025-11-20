@@ -498,9 +498,9 @@ If you encounter this error when searching:
 AttributeError: 'IndexIVFFlat' object has no attribute 'nflip'.
 ```
 
-**Cause**: Your txtai index was built with an older FAISS configuration (`IVF100,SQ8`) that is incompatible with newer versions of txtai/FAISS.
+**Cause**: txtai's default backend (FAISS) has a compatibility issue where it tries to set the `nflip` parameter on `IndexIVFFlat`, which doesn't support this attribute. This occurs even without explicit FAISS configuration in newer versions of txtai/FAISS.
 
-**Solution**: Rebuild your index with the corrected configuration:
+**Solution**: Switch to the hnswlib backend instead of FAISS:
 
 ```bash
 # Navigate to backend directory
@@ -512,17 +512,22 @@ source venv/bin/activate
 # On Windows:
 venv\Scripts\activate
 
-# Delete the old index
+# Install/update dependencies (includes hnswlib)
+pip install -r requirements.txt
+
+# Delete the old index (if it exists)
 # On Linux/Mac:
 rm -rf data/txtai
 # On Windows:
 rmdir /s /q data\txtai
 
-# Rebuild the index
+# Rebuild the index with hnswlib backend
 python -m src.cli.marxist_cli index build
 ```
 
-The new index will use txtai's default configuration which is compatible with all versions.
+The configuration now uses `"backend": "hnsw"` (hnswlib) instead of FAISS, which provides fast approximate nearest neighbor search without the compatibility issues.
+
+**Alternative**: If you don't want to install hnswlib, you can use exact search with the numpy backend by changing `"backend": "hnsw"` to `"backend": "numpy"` in `backend/config/search_config.py` (slower but doesn't require additional dependencies).
 
 ### Other Common Issues
 

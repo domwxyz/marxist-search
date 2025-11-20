@@ -30,6 +30,9 @@ TXTAI_CONFIG = {
     "path": "BAAI/bge-small-en-v1.5",
     "content": True,
     "keyword": True,
+    # Use hnsw backend instead of faiss to avoid nflip AttributeError with IndexIVFFlat
+    # hnsw (hnswlib) provides fast approximate search without faiss compatibility issues
+    "backend": "hnsw",
     "columns": {
         "id": "INTEGER PRIMARY KEY",
         "article_id": "INTEGER",
@@ -45,8 +48,6 @@ TXTAI_CONFIG = {
         "terms": "TEXT",
         "tags": "TEXT"
     }
-    # Note: Removed faiss configuration to avoid nflip compatibility issues
-    # txtai will use its default index configuration which is compatible
 }
 
 # Chunking Configuration

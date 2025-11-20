@@ -502,10 +502,10 @@ CREATE TABLE search_logs (
         "terms": "TEXT",                # JSON string of extracted terms
         "tags": "TEXT"                  # JSON string of RSS tags
     },
-    
-    # Note: FAISS ANN configuration removed to avoid compatibility issues
-    # with newer versions of txtai/FAISS (nflip AttributeError with IndexIVFFlat)
-    # txtai will use its default index configuration which is compatible
+
+    # Use hnsw backend instead of faiss to avoid nflip AttributeError with IndexIVFFlat
+    # hnsw (hnswlib) provides fast approximate search without faiss compatibility issues
+    "backend": "hnsw"
 }
 ```
 
@@ -1575,10 +1575,10 @@ Available (4GB)        ~600 MB
 TXTAI_CONFIG = {
     "path": "BAAI/bge-small-en-v1.5",
     "content": True,
-    "keyword": True
-    # Note: FAISS ANN configuration removed to avoid compatibility issues
-    # with newer versions of txtai/FAISS (nflip AttributeError with IndexIVFFlat)
-    # txtai will use its default index configuration which is compatible
+    "keyword": True,
+    # Use hnsw backend instead of faiss to avoid nflip AttributeError with IndexIVFFlat
+    # hnsw (hnswlib) provides fast approximate search without faiss compatibility issues
+    "backend": "hnsw"
 }
 
 # Search Configuration
