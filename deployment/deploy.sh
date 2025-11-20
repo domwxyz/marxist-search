@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # Deployment script for Marxist Search Engine
-# Usage: ./deploy.sh <domain>
+# Usage: cd deployment && sudo ./deploy.sh <domain>
 #
 # This script automates the deployment of the Marxist Search Engine
 # to a Linux VPS (DigitalOcean, Linode, etc.)
@@ -12,6 +12,10 @@ set -e  # Exit on error
 # ============================================================================
 # Configuration
 # ============================================================================
+
+# Get the directory where this script is located
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 DOMAIN="${1:-YOUR_DOMAIN_HERE}"
 APP_DIR="/opt/marxist-search"
@@ -140,13 +144,13 @@ log_success "Directory structure created"
 
 log_info "Copying application files..."
 
-# Assumes script is run from project root
-cp -r backend "$APP_DIR/"
-cp -r frontend "$APP_DIR/"
+# Copy from project root
+cp -r "$PROJECT_ROOT/backend" "$APP_DIR/"
+cp -r "$PROJECT_ROOT/frontend" "$APP_DIR/"
 
 # Copy configuration files if they don't exist
 if [ ! -f "$APP_DIR/backend/.env" ]; then
-    cp .env.production.example "$APP_DIR/backend/.env"
+    cp "$SCRIPT_DIR/.env.production.example" "$APP_DIR/backend/.env"
     log_warning "Created .env file - please configure it!"
 fi
 
@@ -197,8 +201,8 @@ log_success "Frontend built"
 
 log_info "Configuring Nginx..."
 
-# Copy nginx config
-cp "$APP_DIR/../../nginx.conf" /etc/nginx/sites-available/marxist-search
+# Copy nginx config from deployment directory
+cp "$SCRIPT_DIR/nginx.conf" /etc/nginx/sites-available/marxist-search
 
 # Replace domain placeholder
 sed -i "s/YOUR_DOMAIN_HERE/$DOMAIN/g" /etc/nginx/sites-available/marxist-search
@@ -225,10 +229,10 @@ log_success "Nginx configured"
 
 log_info "Installing systemd services..."
 
-# Copy service files
-cp "$APP_DIR/../../systemd/marxist-search-api.service" /etc/systemd/system/
-cp "$APP_DIR/../../systemd/marxist-search-update.service" /etc/systemd/system/
-cp "$APP_DIR/../../systemd/marxist-search-update.timer" /etc/systemd/system/
+# Copy service files from deployment directory
+cp "$SCRIPT_DIR/systemd/marxist-search-api.service" /etc/systemd/system/
+cp "$SCRIPT_DIR/systemd/marxist-search-update.service" /etc/systemd/system/
+cp "$SCRIPT_DIR/systemd/marxist-search-update.timer" /etc/systemd/system/
 
 # Reload systemd
 systemctl daemon-reload

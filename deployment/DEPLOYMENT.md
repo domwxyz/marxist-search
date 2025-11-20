@@ -1,6 +1,24 @@
-# Deployment Files Overview
+# Deployment Files
 
 This directory contains all the necessary files and configurations for deploying the Marxist Search Engine to a production Linux VPS.
+
+## Directory Structure
+
+```
+deployment/
+├── DEPLOYMENT.md                    # This file
+├── deployment_guide.txt             # Comprehensive deployment guide
+├── deploy.sh                        # Automated deployment script
+├── nginx.conf                       # Nginx configuration
+├── .env.production.example          # Environment variables template
+├── systemd/                         # Systemd service files
+│   ├── marxist-search-api.service
+│   ├── marxist-search-update.service
+│   └── marxist-search-update.timer
+└── scripts/                         # Utility scripts
+    ├── backup.sh
+    └── health_check.sh
+```
 
 ## Files Overview
 
@@ -75,7 +93,7 @@ Located in `scripts/` directory:
 ```bash
 # On your server
 git clone https://github.com/domwxyz/marxist-search.git
-cd marxist-search
+cd marxist-search/deployment
 sudo ./deploy.sh yourdomain.com
 ```
 
@@ -115,7 +133,8 @@ tail -f /var/log/news-search/api.log
 ### Health Check
 
 ```bash
-# Run health check script
+# Run health check script (from project deployment directory)
+cd /path/to/marxist-search/deployment
 ./scripts/health_check.sh
 
 # Or check API directly
@@ -125,12 +144,15 @@ curl http://localhost:8000/api/v1/health
 ### Backups
 
 ```bash
-# Run backup script
+# Run backup script (from project deployment directory)
+cd /path/to/marxist-search/deployment
 ./scripts/backup.sh
 
 # Or set up automated backups via cron
+# Note: Use absolute paths in crontab
 sudo crontab -e
-# Add: 0 2 * * * /opt/marxist-search/scripts/backup.sh
+# Add: 0 2 * * * /usr/local/bin/backup-marxist-search.sh
+# (Copy the script to /usr/local/bin/ for cron usage)
 ```
 
 ## Directory Structure on Server
@@ -142,9 +164,8 @@ sudo crontab -e
 │   ├── config/
 │   ├── venv/
 │   └── .env
-├── frontend/
-│   └── build/
-└── scripts/
+└── frontend/
+    └── build/
 
 /var/lib/marxist-search/       # Data directory
 ├── articles.db
@@ -188,9 +209,9 @@ sudo crontab -e
 
 For issues or questions:
 
-1. Check `deployment_guide.txt` troubleshooting section
+1. Check `deployment/deployment_guide.txt` troubleshooting section
 2. Review application logs in `/var/log/news-search/`
-3. Run `./scripts/health_check.sh` to diagnose issues
+3. Run `deployment/scripts/health_check.sh` to diagnose issues
 4. Check GitHub repository for updates
 
 ## License

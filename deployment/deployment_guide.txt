@@ -101,7 +101,7 @@ Step 1: Clone Repository to Server
 ----------------------------------
 cd /tmp
 git clone https://github.com/domwxyz/marxist-search.git
-cd marxist-search
+cd marxist-search/deployment
 
 Step 2: Run Deployment Script
 -----------------------------
