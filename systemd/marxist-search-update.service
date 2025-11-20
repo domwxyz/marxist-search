@@ -1,0 +1,38 @@
+# Systemd service for incremental article updates
+# Copy to: /etc/systemd/system/marxist-search-update.service
+
+[Unit]
+Description=Marxist Search Incremental Update
+Documentation=https://github.com/domwxyz/marxist-search
+
+[Service]
+Type=oneshot
+User=marxist
+Group=marxist
+WorkingDirectory=/opt/marxist-search/backend
+
+# Environment
+Environment="PATH=/opt/marxist-search/backend/venv/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONPATH=/opt/marxist-search/backend"
+Environment="ENVIRONMENT=production"
+
+# Service execution
+ExecStart=/opt/marxist-search/backend/venv/bin/python -m src.scripts.incremental_update
+
+# Timeout (10 minutes max)
+TimeoutStartSec=600
+
+# Logging
+StandardOutput=append:/var/log/news-search/ingestion.log
+StandardError=append:/var/log/news-search/errors.log
+SyslogIdentifier=marxist-search-update
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/marxist-search /var/log/news-search
+
+[Install]
+# This is triggered by the timer, not installed directly

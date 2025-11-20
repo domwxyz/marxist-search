@@ -1,0 +1,52 @@
+# Systemd service file for Marxist Search API
+# Copy to: /etc/systemd/system/marxist-search-api.service
+
+[Unit]
+Description=Marxist Search API Server
+Documentation=https://github.com/domwxyz/marxist-search
+After=network.target
+
+[Service]
+Type=simple
+User=marxist
+Group=marxist
+WorkingDirectory=/opt/marxist-search/backend
+
+# Environment
+Environment="PATH=/opt/marxist-search/backend/venv/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONPATH=/opt/marxist-search/backend"
+Environment="ENVIRONMENT=production"
+Environment="DEBUG=false"
+
+# Service execution
+ExecStart=/opt/marxist-search/backend/venv/bin/uvicorn \
+    src.api.main:app \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --workers 1 \
+    --log-level info \
+    --no-access-log
+
+# Restart policy
+Restart=always
+RestartSec=5
+StartLimitInterval=0
+
+# Resource limits
+LimitNOFILE=65536
+MemoryMax=4G
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/marxist-search /var/log/news-search
+
+# Logging
+StandardOutput=append:/var/log/news-search/api.log
+StandardError=append:/var/log/news-search/errors.log
+SyslogIdentifier=marxist-search-api
+
+[Install]
+WantedBy=multi-user.target

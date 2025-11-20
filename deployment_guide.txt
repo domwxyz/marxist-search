@@ -1,0 +1,855 @@
+================================================================================
+MARXIST SEARCH ENGINE - DEPLOYMENT GUIDE
+================================================================================
+
+This guide provides step-by-step instructions for deploying the Marxist Search
+Engine to a Linux VPS (DigitalOcean, Linode, AWS, etc.).
+
+TABLE OF CONTENTS
+-----------------
+1. Prerequisites
+2. Server Setup
+3. Automated Deployment (Recommended)
+4. Manual Deployment
+5. Post-Deployment Configuration
+6. Initial Data Setup
+7. Monitoring & Maintenance
+8. Troubleshooting
+9. Backup & Recovery
+10. Security Hardening
+
+
+================================================================================
+1. PREREQUISITES
+================================================================================
+
+Server Requirements:
+-------------------
+- Linux VPS (Ubuntu 22.04 LTS or 24.04 LTS recommended)
+- 4GB RAM minimum (for 16k+ articles)
+- 2 vCPUs minimum
+- 80GB SSD storage
+- DigitalOcean $24/month droplet or equivalent
+
+Local Requirements:
+------------------
+- Git
+- SSH client
+- Domain name (optional but recommended)
+- Access to DNS settings (if using custom domain)
+
+Domain Setup (Optional):
+-----------------------
+1. Purchase a domain from any registrar
+2. Point A record to your server's IP address
+3. Wait for DNS propagation (5-60 minutes)
+
+
+================================================================================
+2. SERVER SETUP
+================================================================================
+
+Step 1: Create VPS
+------------------
+For DigitalOcean:
+- Create account at digitalocean.com
+- Create new droplet
+- Choose Ubuntu 24.04 LTS
+- Select $24/month plan (4GB RAM, 2 vCPUs)
+- Choose datacenter region
+- Add SSH key for secure access
+- Create droplet
+
+For other providers (Linode, Vultr, AWS):
+- Similar process - choose Ubuntu 24.04 LTS
+- Minimum 4GB RAM, 2 vCPUs, 80GB storage
+
+Step 2: Initial Server Access
+-----------------------------
+ssh root@YOUR_SERVER_IP
+
+Step 3: Update System
+---------------------
+apt update && apt upgrade -y
+
+Step 4: Create Non-Root User (Optional but recommended)
+-------------------------------------------------------
+adduser deploy
+usermod -aG sudo deploy
+rsync --archive --chown=deploy:deploy ~/.ssh /home/deploy
+
+# Test login
+ssh deploy@YOUR_SERVER_IP
+
+Step 5: Set Hostname
+--------------------
+hostnamectl set-hostname marxist-search
+
+Step 6: Configure Timezone
+--------------------------
+timedatectl set-timezone America/New_York  # or your timezone
+timedatectl
+
+
+================================================================================
+3. AUTOMATED DEPLOYMENT (RECOMMENDED)
+================================================================================
+
+The deploy.sh script automates most of the deployment process.
+
+Step 1: Clone Repository to Server
+----------------------------------
+cd /tmp
+git clone https://github.com/domwxyz/marxist-search.git
+cd marxist-search
+
+Step 2: Run Deployment Script
+-----------------------------
+sudo ./deploy.sh yourdomain.com
+
+# Or if you don't have a domain yet:
+sudo ./deploy.sh localhost
+
+The script will:
+- Install all system dependencies
+- Create application user and directories
+- Set up Python virtual environment
+- Build frontend
+- Configure Nginx
+- Install systemd services
+- Optionally set up SSL with Let's Encrypt
+- Configure firewall and log rotation
+
+Step 3: Follow Post-Deployment Steps
+------------------------------------
+After the script completes, continue to Section 5 for configuration
+and Section 6 for initial data setup.
+
+
+================================================================================
+4. MANUAL DEPLOYMENT
+================================================================================
+
+If you prefer manual deployment or need to customize the process:
+
+Step 1: Install System Dependencies
+-----------------------------------
+sudo apt update
+sudo apt install -y \
+    python3.11 \
+    python3.11-venv \
+    python3-pip \
+    nginx \
+    git \
+    curl \
+    build-essential \
+    python3.11-dev \
+    certbot \
+    python3-certbot-nginx
+
+Step 2: Install Node.js (for frontend build)
+--------------------------------------------
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo bash -
+sudo apt install -y nodejs
+
+Step 3: Create Application User
+-------------------------------
+sudo useradd --system --shell /bin/bash --home-dir /opt/marxist-search \
+    --create-home marxist
+
+Step 4: Create Directory Structure
+----------------------------------
+sudo mkdir -p /opt/marxist-search
+sudo mkdir -p /var/lib/marxist-search/{txtai,cache}
+sudo mkdir -p /var/log/news-search
+
+# Set ownership
+sudo chown -R marxist:marxist /opt/marxist-search
+sudo chown -R marxist:marxist /var/lib/marxist-search
+sudo chown -R marxist:marxist /var/log/news-search
+
+Step 5: Clone Repository
+------------------------
+cd /tmp
+git clone https://github.com/domwxyz/marxist-search.git
+cd marxist-search
+
+# Copy to application directory
+sudo cp -r backend /opt/marxist-search/
+sudo cp -r frontend /opt/marxist-search/
+sudo chown -R marxist:marxist /opt/marxist-search
+
+Step 6: Set Up Python Environment
+---------------------------------
+cd /opt/marxist-search/backend
+sudo -u marxist python3.11 -m venv venv
+sudo -u marxist venv/bin/pip install --upgrade pip setuptools wheel
+sudo -u marxist venv/bin/pip install -r requirements.txt
+
+Step 7: Build Frontend
+----------------------
+cd /opt/marxist-search/frontend
+sudo -u marxist npm install
+sudo -u marxist npm run build
+
+Step 8: Configure Nginx
+-----------------------
+# Copy nginx config
+sudo cp /tmp/marxist-search/nginx.conf \
+    /etc/nginx/sites-available/marxist-search
+
+# Replace domain placeholder
+sudo sed -i "s/YOUR_DOMAIN_HERE/yourdomain.com/g" \
+    /etc/nginx/sites-available/marxist-search
+
+# Enable site
+sudo ln -s /etc/nginx/sites-available/marxist-search \
+    /etc/nginx/sites-enabled/
+
+# Test configuration
+sudo nginx -t
+
+# Reload nginx
+sudo systemctl reload nginx
+
+Step 9: Install Systemd Services
+--------------------------------
+# Copy service files
+sudo cp /tmp/marxist-search/systemd/*.service /etc/systemd/system/
+sudo cp /tmp/marxist-search/systemd/*.timer /etc/systemd/system/
+
+# Reload systemd
+sudo systemctl daemon-reload
+
+# Enable and start services
+sudo systemctl enable marxist-search-api.service
+sudo systemctl start marxist-search-api.service
+
+sudo systemctl enable marxist-search-update.timer
+sudo systemctl start marxist-search-update.timer
+
+Step 10: Set Up SSL (Optional but recommended)
+----------------------------------------------
+sudo certbot --nginx -d yourdomain.com
+
+# Uncomment HTTPS section in nginx config
+sudo nano /etc/nginx/sites-available/marxist-search
+# (Uncomment the HTTPS server block)
+
+sudo systemctl reload nginx
+
+Step 11: Configure Firewall
+---------------------------
+sudo ufw allow 22/tcp   # SSH
+sudo ufw allow 80/tcp   # HTTP
+sudo ufw allow 443/tcp  # HTTPS
+sudo ufw enable
+
+
+================================================================================
+5. POST-DEPLOYMENT CONFIGURATION
+================================================================================
+
+Step 1: Configure Environment Variables
+---------------------------------------
+cd /opt/marxist-search/backend
+sudo -u marxist cp /tmp/marxist-search/.env.production.example .env
+sudo -u marxist nano .env
+
+Update the following in .env:
+- ENVIRONMENT=production
+- DEBUG=false
+- LOG_LEVEL=INFO
+
+Step 2: Update Frontend API Endpoint (if needed)
+------------------------------------------------
+If your domain differs from localhost:
+
+cd /opt/marxist-search/frontend
+sudo -u marxist nano .env.production
+
+Add:
+REACT_APP_API_URL=https://yourdomain.com/api
+
+# Rebuild frontend
+sudo -u marxist npm run build
+
+Step 3: Configure CORS in Backend
+---------------------------------
+Edit /opt/marxist-search/backend/src/api/main.py
+
+Update allow_origins list to include your production domain:
+allow_origins=[
+    "https://yourdomain.com",
+    "https://www.yourdomain.com",
+]
+
+Step 4: Update Production Paths (if needed)
+-------------------------------------------
+By default, the application uses:
+- Database: /var/lib/marxist-search/articles.db
+- Index: /var/lib/marxist-search/txtai
+- Logs: /var/log/news-search/
+
+These are configured in backend/config/search_config.py
+Modify if you need different paths.
+
+
+================================================================================
+6. INITIAL DATA SETUP
+================================================================================
+
+This is the most time-consuming part (3-5 hours for initial indexing).
+
+Step 1: Initialize Database
+---------------------------
+cd /opt/marxist-search/backend
+sudo -u marxist venv/bin/python -m src.cli.marxist_cli init-db
+
+Expected output:
+- Database created at /var/lib/marxist-search/articles.db
+- Tables created successfully
+
+Step 2: Configure RSS Feeds
+---------------------------
+Edit /opt/marxist-search/backend/config/rss_feeds.json
+
+Ensure all feeds are configured correctly. Default feeds:
+- In Defence of Marxism (marxist.com)
+- Revolutionary Communist Party (communist.red)
+- Revolutionary Communists of America (communistusa.org)
+
+Step 3: Run Initial Archiving
+-----------------------------
+This will fetch all historical articles (may take 1-2 hours):
+
+sudo -u marxist venv/bin/python -m src.cli.marxist_cli archive run
+
+Expected output:
+- Fetching articles from each feed
+- Progress bars showing extraction
+- Final count of articles archived
+
+You can monitor progress:
+tail -f /var/log/news-search/ingestion.log
+
+Step 4: Build Search Index
+--------------------------
+This will create embeddings for all articles (3-5 hours on CPU):
+
+sudo -u marxist venv/bin/python -m src.cli.marxist_cli index build
+
+Expected output:
+- Loading articles from database
+- Generating embeddings (progress bar)
+- Building txtai index
+- Index saved to /var/lib/marxist-search/txtai
+
+Monitor memory usage during indexing:
+watch -n 5 free -h
+
+Step 5: Restart API Service
+---------------------------
+sudo systemctl restart marxist-search-api.service
+
+Step 6: Verify Deployment
+-------------------------
+# Check API health
+curl http://localhost:8000/api/v1/health
+
+Expected response:
+{
+  "status": "healthy",
+  "index_loaded": true,
+  "index_document_count": 18575,
+  "database_connected": true,
+  "uptime_seconds": 10
+}
+
+# Check stats
+curl http://localhost:8000/api/v1/stats
+
+# Test search
+curl -X POST http://localhost:8000/api/v1/search \
+  -H "Content-Type: application/json" \
+  -d '{"query": "imperialism", "filters": {"limit": 5}}'
+
+Step 7: Test Frontend
+---------------------
+Open browser to:
+http://yourdomain.com (or https if SSL configured)
+
+Test:
+- Search functionality
+- Filters (source, author, date)
+- Result display
+- Pagination
+
+
+================================================================================
+7. MONITORING & MAINTENANCE
+================================================================================
+
+Service Management
+-----------------
+# Check service status
+sudo systemctl status marxist-search-api
+sudo systemctl status marxist-search-update.timer
+
+# Restart services
+sudo systemctl restart marxist-search-api
+sudo systemctl restart marxist-search-update.timer
+
+# View logs
+sudo journalctl -u marxist-search-api -n 100 -f
+sudo journalctl -u marxist-search-update -n 50
+
+Application Logs
+---------------
+# API logs
+tail -f /var/log/news-search/api.log
+
+# Ingestion logs (RSS updates)
+tail -f /var/log/news-search/ingestion.log
+
+# Search query logs
+tail -f /var/log/news-search/search.log
+
+# Error logs
+tail -f /var/log/news-search/errors.log
+
+System Monitoring
+----------------
+# Check memory usage
+free -h
+
+# Check disk usage
+df -h /var/lib/marxist-search
+
+# Check CPU usage
+top -u marxist
+
+# Check network
+netstat -tulpn | grep 8000
+
+Update Timer Status
+------------------
+# Check when next update will run
+systemctl list-timers marxist-search-update.timer
+
+# Manually trigger update
+sudo systemctl start marxist-search-update.service
+
+# View update history
+sudo journalctl -u marxist-search-update.service --since "1 week ago"
+
+Database Maintenance
+-------------------
+# Check database size
+du -h /var/lib/marxist-search/articles.db
+
+# Optimize database (run monthly)
+cd /opt/marxist-search/backend
+sudo -u marxist venv/bin/python -c "
+import sqlite3
+conn = sqlite3.connect('/var/lib/marxist-search/articles.db')
+conn.execute('VACUUM')
+conn.close()
+"
+
+Index Maintenance
+----------------
+# View index info
+cd /opt/marxist-search/backend
+sudo -u marxist venv/bin/python -m src.cli.marxist_cli index info
+
+# Rebuild index (if needed, takes several hours)
+sudo -u marxist venv/bin/python -m src.cli.marxist_cli index build
+
+
+================================================================================
+8. TROUBLESHOOTING
+================================================================================
+
+API Won't Start
+--------------
+Problem: systemctl status shows failed state
+
+Solutions:
+1. Check logs:
+   sudo journalctl -u marxist-search-api -n 100
+
+2. Verify Python environment:
+   cd /opt/marxist-search/backend
+   sudo -u marxist venv/bin/python --version
+
+3. Check index exists:
+   ls -la /var/lib/marxist-search/txtai/
+
+4. Test manually:
+   cd /opt/marxist-search/backend
+   sudo -u marxist venv/bin/uvicorn src.api.main:app --host 0.0.0.0 --port 8000
+
+Search Returns No Results
+-------------------------
+Problem: Queries return empty results
+
+Solutions:
+1. Check if index is loaded:
+   curl http://localhost:8000/api/v1/health
+
+2. Verify database has articles:
+   cd /opt/marxist-search/backend
+   sudo -u marxist venv/bin/python -c "
+   import sqlite3
+   conn = sqlite3.connect('/var/lib/marxist-search/articles.db')
+   count = conn.execute('SELECT COUNT(*) FROM articles').fetchone()[0]
+   print(f'Articles: {count}')
+   conn.close()
+   "
+
+3. Check if articles are indexed:
+   sudo -u marxist venv/bin/python -m src.cli.marxist_cli stats
+
+4. Rebuild index if needed
+
+High Memory Usage
+----------------
+Problem: Server running out of memory
+
+Solutions:
+1. Check txtai index size:
+   du -h /var/lib/marxist-search/txtai/
+
+2. Reduce search thread pool size:
+   Edit /opt/marxist-search/backend/config/search_config.py
+   CONCURRENCY_CONFIG["search_thread_pool_size"] = 2
+
+3. Enable swap (temporary solution):
+   sudo fallocate -l 2G /swapfile
+   sudo chmod 600 /swapfile
+   sudo mkswap /swapfile
+   sudo swapon /swapfile
+
+4. Upgrade to 8GB RAM server for production
+
+Nginx 502 Bad Gateway
+--------------------
+Problem: Nginx shows 502 error
+
+Solutions:
+1. Check if API is running:
+   curl http://localhost:8000/api/v1/health
+
+2. Restart API service:
+   sudo systemctl restart marxist-search-api
+
+3. Check nginx error logs:
+   sudo tail -f /var/log/nginx/marxist-search-error.log
+
+4. Verify nginx config:
+   sudo nginx -t
+
+SSL Certificate Issues
+---------------------
+Problem: HTTPS not working or certificate expired
+
+Solutions:
+1. Renew certificate:
+   sudo certbot renew
+
+2. Check certificate status:
+   sudo certbot certificates
+
+3. Enable auto-renewal:
+   sudo systemctl enable certbot.timer
+   sudo systemctl start certbot.timer
+
+Updates Not Running
+------------------
+Problem: No new articles being indexed
+
+Solutions:
+1. Check timer status:
+   systemctl list-timers marxist-search-update.timer
+
+2. Manually run update:
+   sudo systemctl start marxist-search-update.service
+
+3. Check logs:
+   sudo journalctl -u marxist-search-update -n 50
+
+4. Verify RSS feeds are accessible:
+   cd /opt/marxist-search/backend
+   sudo -u marxist venv/bin/python -m src.cli.marxist_cli archive list
+
+
+================================================================================
+9. BACKUP & RECOVERY
+================================================================================
+
+What to Backup
+-------------
+- Database: /var/lib/marxist-search/articles.db
+- Index: /var/lib/marxist-search/txtai/
+- Configuration: /opt/marxist-search/backend/config/
+- Environment: /opt/marxist-search/backend/.env
+
+Manual Backup
+------------
+# Create backup directory
+sudo mkdir -p /var/backups/marxist-search
+
+# Backup database
+sudo -u marxist cp /var/lib/marxist-search/articles.db \
+    /var/backups/marxist-search/articles-$(date +%Y%m%d).db
+
+# Backup index (compressed)
+sudo -u marxist tar -czf \
+    /var/backups/marxist-search/txtai-$(date +%Y%m%d).tar.gz \
+    -C /var/lib/marxist-search txtai/
+
+# Backup configuration
+sudo -u marxist tar -czf \
+    /var/backups/marxist-search/config-$(date +%Y%m%d).tar.gz \
+    -C /opt/marxist-search/backend config/ .env
+
+Automated Backup Script
+-----------------------
+Create /usr/local/bin/backup-marxist-search.sh:
+
+#!/bin/bash
+BACKUP_DIR="/var/backups/marxist-search"
+DATE=$(date +%Y%m%d)
+
+mkdir -p $BACKUP_DIR
+
+# Backup database
+cp /var/lib/marxist-search/articles.db \
+   $BACKUP_DIR/articles-$DATE.db
+
+# Backup config
+tar -czf $BACKUP_DIR/config-$DATE.tar.gz \
+    -C /opt/marxist-search/backend config/ .env
+
+# Keep only last 7 days
+find $BACKUP_DIR -type f -mtime +7 -delete
+
+Make executable:
+sudo chmod +x /usr/local/bin/backup-marxist-search.sh
+
+Add to crontab (daily at 2 AM):
+sudo crontab -e
+0 2 * * * /usr/local/bin/backup-marxist-search.sh
+
+Restore from Backup
+------------------
+# Stop services
+sudo systemctl stop marxist-search-api
+
+# Restore database
+sudo -u marxist cp /var/backups/marxist-search/articles-20251120.db \
+    /var/lib/marxist-search/articles.db
+
+# Restore index
+sudo -u marxist tar -xzf \
+    /var/backups/marxist-search/txtai-20251120.tar.gz \
+    -C /var/lib/marxist-search
+
+# Restore config
+sudo -u marxist tar -xzf \
+    /var/backups/marxist-search/config-20251120.tar.gz \
+    -C /opt/marxist-search/backend
+
+# Restart services
+sudo systemctl start marxist-search-api
+
+Off-Site Backup
+--------------
+For production, copy backups to remote storage:
+
+# Using rsync to remote server
+rsync -avz /var/backups/marxist-search/ \
+    user@backup-server:/backups/marxist-search/
+
+# Using AWS S3 (requires aws cli)
+aws s3 sync /var/backups/marxist-search/ \
+    s3://your-bucket/marxist-search-backups/
+
+# Using DigitalOcean Spaces
+s3cmd sync /var/backups/marxist-search/ \
+    s3://your-space/backups/
+
+
+================================================================================
+10. SECURITY HARDENING
+================================================================================
+
+Firewall Configuration
+---------------------
+# Enable UFW
+sudo ufw enable
+
+# Allow only necessary ports
+sudo ufw allow 22/tcp   # SSH
+sudo ufw allow 80/tcp   # HTTP
+sudo ufw allow 443/tcp  # HTTPS
+
+# Deny all other incoming
+sudo ufw default deny incoming
+sudo ufw default allow outgoing
+
+# Enable rate limiting for SSH
+sudo ufw limit 22/tcp
+
+SSH Security
+-----------
+Edit /etc/ssh/sshd_config:
+
+# Disable root login
+PermitRootLogin no
+
+# Disable password authentication (use keys only)
+PasswordAuthentication no
+
+# Change default port (optional)
+Port 2222
+
+Restart SSH:
+sudo systemctl restart sshd
+
+Fail2Ban (Prevent brute force)
+-----------------------------
+sudo apt install fail2ban
+
+Create /etc/fail2ban/jail.local:
+
+[sshd]
+enabled = true
+port = 22
+filter = sshd
+logpath = /var/log/auth.log
+maxretry = 3
+bantime = 3600
+
+[nginx-limit-req]
+enabled = true
+filter = nginx-limit-req
+logpath = /var/log/nginx/marxist-search-error.log
+maxretry = 5
+bantime = 600
+
+sudo systemctl enable fail2ban
+sudo systemctl start fail2ban
+
+Automatic Security Updates
+--------------------------
+sudo apt install unattended-upgrades
+
+sudo dpkg-reconfigure -plow unattended-upgrades
+
+Regular Updates
+--------------
+# Weekly update check
+sudo apt update
+sudo apt upgrade -y
+
+Application User Permissions
+---------------------------
+# Verify marxist user has minimal permissions
+sudo -u marxist whoami
+sudo -u marxist ls -la /opt/marxist-search/
+
+# Ensure correct ownership
+sudo chown -R marxist:marxist /opt/marxist-search
+sudo chown -R marxist:marxist /var/lib/marxist-search
+sudo chown -R marxist:marxist /var/log/news-search
+
+Database Security
+----------------
+# SQLite is file-based, ensure proper permissions
+sudo chmod 640 /var/lib/marxist-search/articles.db
+sudo chown marxist:marxist /var/lib/marxist-search/articles.db
+
+API Rate Limiting
+----------------
+Already configured in Nginx:
+- General API: 100 requests/minute per IP
+- Search endpoint: 50 requests/minute per IP
+
+Adjust in nginx.conf if needed.
+
+
+================================================================================
+QUICK REFERENCE COMMANDS
+================================================================================
+
+Service Management:
+  sudo systemctl status marxist-search-api
+  sudo systemctl restart marxist-search-api
+  sudo systemctl status marxist-search-update.timer
+
+View Logs:
+  tail -f /var/log/news-search/api.log
+  tail -f /var/log/news-search/ingestion.log
+  tail -f /var/log/news-search/errors.log
+  sudo journalctl -u marxist-search-api -f
+
+Check Health:
+  curl http://localhost:8000/api/v1/health
+  curl http://localhost:8000/api/v1/stats
+
+Manual Operations:
+  cd /opt/marxist-search/backend
+  sudo -u marxist venv/bin/python -m src.cli.marxist_cli archive update
+  sudo -u marxist venv/bin/python -m src.cli.marxist_cli index update
+  sudo -u marxist venv/bin/python -m src.cli.marxist_cli stats
+
+Nginx:
+  sudo nginx -t
+  sudo systemctl reload nginx
+  tail -f /var/log/nginx/marxist-search-access.log
+
+Backup:
+  /usr/local/bin/backup-marxist-search.sh
+
+System Monitoring:
+  htop
+  df -h
+  free -h
+
+
+================================================================================
+SUPPORT & ADDITIONAL RESOURCES
+================================================================================
+
+Documentation:
+  - Project README: /opt/marxist-search/README.md
+  - Design Doc: /opt/marxist-search/marxist_search_design.txt
+  - Backend README: /opt/marxist-search/backend/README.md
+
+Logs Location:
+  - Application: /var/log/news-search/
+  - Nginx: /var/log/nginx/
+  - System: /var/log/syslog
+
+Configuration Files:
+  - Backend: /opt/marxist-search/backend/config/
+  - Nginx: /etc/nginx/sites-available/marxist-search
+  - Systemd: /etc/systemd/system/marxist-search-*
+
+Data Locations:
+  - Database: /var/lib/marxist-search/articles.db
+  - Index: /var/lib/marxist-search/txtai/
+  - Cache: /var/lib/marxist-search/cache/
+
+GitHub Repository:
+  https://github.com/domwxyz/marxist-search
+
+
+================================================================================
+END OF DEPLOYMENT GUIDE
+================================================================================
+
+Last Updated: 2025-11-20
+Version: 1.0
