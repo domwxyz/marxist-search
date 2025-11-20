@@ -13,7 +13,8 @@ import json
 from txtai.embeddings import Embeddings
 
 from .filters import SearchFilters
-from config.search_config import SEARCH_CONFIG, INDEX_PATH, DATABASE_PATH
+from ..ingestion.term_extractor import TermExtractor
+from config.search_config import SEARCH_CONFIG, INDEX_PATH, DATABASE_PATH, TERMS_CONFIG
 
 logger = logging.getLogger('search')
 
@@ -30,13 +31,19 @@ class SearchEngine:
     - Thread-safe operations
     """
 
-    def __init__(self, index_path: str = None, db_path: str = None):
+    def __init__(
+        self,
+        index_path: str = None,
+        db_path: str = None,
+        enable_query_expansion: bool = True
+    ):
         """
         Initialize search engine.
 
         Args:
             index_path: Path to txtai index
             db_path: Path to SQLite database
+            enable_query_expansion: Enable automatic query expansion with synonyms/aliases
         """
         self.index_path = index_path or INDEX_PATH
         self.db_path = db_path or DATABASE_PATH
@@ -49,6 +56,17 @@ class SearchEngine:
         self.semantic_weight = SEARCH_CONFIG['semantic_weight']
         self.bm25_weight = SEARCH_CONFIG['bm25_weight']
         self.recency_boosts = SEARCH_CONFIG['recency_boost']
+
+        # Initialize term extractor for query expansion
+        self.term_extractor = None
+        self.enable_query_expansion = enable_query_expansion
+        if enable_query_expansion:
+            try:
+                self.term_extractor = TermExtractor(TERMS_CONFIG)
+                logger.info("Query expansion enabled with term extractor")
+            except Exception as e:
+                logger.warning(f"Could not initialize term extractor: {e}")
+                self.enable_query_expansion = False
 
     def load_index(self):
         """Load txtai index into memory (thread-safe)."""
@@ -99,6 +117,17 @@ class SearchEngine:
             raise RuntimeError("Index not loaded. Call load_index() first.")
 
         filters = filters or {}
+
+        # Expand query with synonyms and aliases if enabled
+        original_query = query
+        if self.enable_query_expansion and self.term_extractor:
+            try:
+                expanded_query = self._expand_query(query)
+                if expanded_query != query:
+                    logger.info(f"Query expanded: '{query}' -> '{expanded_query}'")
+                    query = expanded_query
+            except Exception as e:
+                logger.warning(f"Query expansion failed, using original query: {e}")
 
         logger.info(f"Executing search: query='{query}', filters={filters}, limit={limit}")
 
@@ -157,8 +186,59 @@ class SearchEngine:
             'offset': offset,
             'query_time_ms': query_time_ms,
             'query': query,
+            'original_query': original_query,
+            'query_expanded': query != original_query,
             'filters': filters
         }
+
+    def _expand_query(self, query: str) -> str:
+        """
+        Expand query with synonyms and aliases.
+
+        Examples:
+        - "USSR" -> "USSR OR Soviet Union"
+        - "proletariat" -> "proletariat OR working class OR workers OR wage laborers"
+        - "UN peacekeeping" -> "(UN OR United Nations) peacekeeping"
+
+        Args:
+            query: Original search query
+
+        Returns:
+            Expanded query with synonyms and aliases
+        """
+        if not self.term_extractor:
+            return query
+
+        # Split query into words
+        words = query.split()
+        expanded_parts = []
+
+        for word in words:
+            # Clean word (remove punctuation for matching)
+            clean_word = word.strip('.,!?;:')
+
+            # Get synonyms for this word
+            synonyms = self.term_extractor.get_synonyms_for_query(clean_word)
+
+            # Check if it's an alias
+            alias_match = self.term_extractor.alias_mapping.get(clean_word.lower())
+            if alias_match:
+                # Add both the alias and the canonical term
+                canonical = self.term_extractor._get_original_term(alias_match)
+                synonyms_set = set(synonyms + [canonical, clean_word])
+                synonyms = list(synonyms_set)
+
+            if len(synonyms) > 1:
+                # Create OR clause for synonyms (limit to 5 for performance)
+                unique_synonyms = list(set(synonyms[:5]))
+                synonym_clause = " OR ".join(f'"{s}"' for s in unique_synonyms)
+                expanded_parts.append(f"({synonym_clause})")
+            else:
+                # No expansion needed, keep original word
+                expanded_parts.append(word)
+
+        expanded = " ".join(expanded_parts)
+        return expanded
 
     def _execute_txtai_search(
         self,
