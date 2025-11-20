@@ -22,6 +22,9 @@ const handleResponse = async (response) => {
 };
 
 export const searchArticles = async (query, filters = {}) => {
+  // Extract limit and offset from filters as they should be at the root level
+  const { limit = 10, offset = 0, ...apiFilters } = filters;
+
   const response = await fetch(`${BASE_URL}/search`, {
     method: 'POST',
     headers: {
@@ -29,7 +32,9 @@ export const searchArticles = async (query, filters = {}) => {
     },
     body: JSON.stringify({
       query,
-      filters,
+      filters: apiFilters,  // Filters without limit/offset
+      limit,                 // limit at root level
+      offset,                // offset at root level
     }),
   });
 
