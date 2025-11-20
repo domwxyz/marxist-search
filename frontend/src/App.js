@@ -29,7 +29,8 @@ function App() {
       const apiFilters = buildApiFilters();
       debouncedSearch(query, apiFilters);
     }
-  }, [query, filters, buildApiFilters, debouncedSearch]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, filters]);
 
   const handleSearch = () => {
     if (query.trim()) {
