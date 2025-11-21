@@ -159,6 +159,12 @@ mkdir -p "$APP_DIR"
 mkdir -p "$DATA_DIR"/{txtai,cache}
 mkdir -p "$LOG_DIR"
 
+# Create log files with correct ownership from the start
+touch "$LOG_DIR/api.log"
+touch "$LOG_DIR/ingestion.log"
+touch "$LOG_DIR/search.log"
+touch "$LOG_DIR/errors.log"
+
 # Set ownership
 chown -R "$APP_USER:$APP_GROUP" "$APP_DIR"
 chown -R "$APP_USER:$APP_GROUP" "$DATA_DIR"
@@ -168,6 +174,7 @@ chown -R "$APP_USER:$APP_GROUP" "$LOG_DIR"
 chmod 755 "$APP_DIR"
 chmod 755 "$DATA_DIR"
 chmod 755 "$LOG_DIR"
+chmod 644 "$LOG_DIR"/*.log
 
 log_success "Directory structure created"
 
@@ -188,7 +195,13 @@ if [ ! -f "$APP_DIR/backend/.env" ]; then
     # Set CORS origins with the domain
     sed -i "s|# ALLOWED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com|ALLOWED_ORIGINS=https://$DOMAIN,https://www.$DOMAIN,http://$DOMAIN,http://www.$DOMAIN|g" "$APP_DIR/backend/.env"
 
-    log_success "Created .env file with CORS configured for $DOMAIN"
+    # Uncomment production data paths (needed for CLI commands)
+    sed -i 's/^# DATA_DIR=/DATA_DIR=/' "$APP_DIR/backend/.env"
+    sed -i 's/^# DATABASE_PATH=/DATABASE_PATH=/' "$APP_DIR/backend/.env"
+    sed -i 's/^# INDEX_PATH=/INDEX_PATH=/' "$APP_DIR/backend/.env"
+    sed -i 's/^# CACHE_PATH=/CACHE_PATH=/' "$APP_DIR/backend/.env"
+
+    log_success "Created .env file with CORS and data paths configured for $DOMAIN"
 else
     log_warning ".env file already exists - skipping"
 fi
@@ -303,19 +316,18 @@ log_info "Setting up SSL certificate..."
 read -p "Do you want to set up SSL with Let's Encrypt? (y/n) " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
+    # Certbot automatically configures nginx with HTTPS
     certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email
-    log_success "SSL certificate installed"
 
-    # Uncomment HTTPS section in nginx config
-    sed -i 's/# server {/server {/g; s/#     /    /g; s/#}/}/g' /etc/nginx/sites-available/marxist-search
-    sed -i "s/YOUR_DOMAIN_HERE/$DOMAIN/g" /etc/nginx/sites-available/marxist-search
-
-    # Enable HTTP->HTTPS redirect
-    sed -i 's/# return 301/return 301/g' /etc/nginx/sites-available/marxist-search
-
-    systemctl reload nginx
+    if [ $? -eq 0 ]; then
+        log_success "SSL certificate installed and nginx configured by certbot"
+    else
+        log_error "SSL certificate installation failed"
+        log_warning "You can run 'sudo certbot --nginx -d $DOMAIN' manually later"
+    fi
 else
     log_warning "Skipping SSL setup"
+    log_info "To enable SSL later, run: sudo certbot --nginx -d $DOMAIN"
 fi
 
 # ============================================================================
@@ -365,25 +377,18 @@ log_info "Checking service status..."
 
 sleep 3
 
+# Note: API service will fail to start until database and index are initialized
+# This is expected on first deployment
 if systemctl is-active --quiet marxist-search-api.service; then
     log_success "API service is running"
 else
-    log_error "API service failed to start"
-    log_info "Check logs: journalctl -u marxist-search-api.service -n 50"
+    log_warning "API service not running (expected - index not built yet)"
 fi
 
 if systemctl is-active --quiet marxist-search-update.timer; then
     log_success "Update timer is active"
 else
     log_warning "Update timer is not active"
-fi
-
-# Test API health endpoint
-sleep 2
-if curl -s http://localhost:8000/api/v1/health > /dev/null; then
-    log_success "API health check passed"
-else
-    log_warning "API health check failed"
 fi
 
 # ============================================================================
@@ -408,13 +413,30 @@ echo "  - API: tail -f /var/log/news-search/api.log"
 echo "  - Updates: tail -f /var/log/news-search/ingestion.log"
 echo "  - Errors: tail -f /var/log/news-search/errors.log"
 echo ""
-echo "Next steps:"
-echo "  1. Configure /opt/marxist-search/backend/.env"
-echo "  2. Initialize database: cd $APP_DIR/backend && sudo -u $APP_USER venv/bin/python -m src.cli.marxist_cli init-db"
-echo "  3. Run initial archiving: sudo -u $APP_USER venv/bin/python -m src.cli.marxist_cli archive run"
-echo "  4. Build index: sudo -u $APP_USER venv/bin/python -m src.cli.marxist_cli index build"
-echo "  5. Restart API: systemctl restart marxist-search-api"
+echo -e "${YELLOW}IMPORTANT: Initial Data Setup Required${NC}"
+echo "The API service will not start until you complete these steps:"
 echo ""
-echo "Website: http://$DOMAIN (or https://$DOMAIN if SSL was configured)"
+echo "  1. Initialize database:"
+echo "     cd $APP_DIR/backend"
+echo "     sudo -u $APP_USER venv/bin/python -m src.cli.marxist_cli init-db"
+echo ""
+echo "  2. Run initial archiving (1-2 hours):"
+echo "     nohup sudo -u $APP_USER venv/bin/python -m src.cli.marxist_cli archive run > /tmp/archive.log 2>&1 &"
+echo "     tail -f /tmp/archive.log  # Monitor progress (Ctrl+C to exit)"
+echo ""
+echo "  3. Build search index (3-5 hours):"
+echo "     nohup sudo -u $APP_USER venv/bin/python -m src.cli.marxist_cli index build > /tmp/index.log 2>&1 &"
+echo "     tail -f /tmp/index.log  # Monitor progress"
+echo ""
+echo "  4. Restart API service:"
+echo "     systemctl restart marxist-search-api"
+echo ""
+echo "  5. Verify deployment:"
+echo "     curl https://$DOMAIN/api/v1/health"
+echo ""
+echo "Website will be available at: https://$DOMAIN (or http://$DOMAIN if SSL not configured)"
+echo ""
+echo "Note: The .env file has been automatically configured with production paths."
+echo "      CLI commands will use /var/lib/marxist-search automatically."
 echo ""
 echo "========================================================================"

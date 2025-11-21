@@ -8,11 +8,22 @@ Commands:
 - stats: Display database and index statistics
 """
 
+# Load environment variables before any other imports
+# This ensures production paths are available to config modules
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Load .env file if it exists (for production paths)
+env_path = Path(__file__).parent.parent.parent / '.env'
+if env_path.exists():
+    load_dotenv(env_path)
+
+# Standard library imports
 import asyncio
 import sys
 import logging
-from pathlib import Path
 
+# Third-party imports
 import click
 from rich.console import Console
 from rich.table import Table
