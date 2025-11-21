@@ -438,7 +438,7 @@ class SearchEngine:
 
         return enriched_results
 
-    def _enrich_with_filter_metadata(self, results: List[Dict]) -> List[Dict]:
+    def _enrich_with_filter_metadata(self, results: List) -> List[Dict]:
         """
         Enrich txtai results with lightweight metadata for filtering.
 
@@ -446,7 +446,7 @@ class SearchEngine:
         Full content is fetched later for only the final paginated results.
 
         Args:
-            results: List of dicts with 'id' and 'score' from txtai
+            results: List of tuples (id, score) from txtai with content=False
 
         Returns:
             List of dicts with filter metadata (no content)
@@ -458,11 +458,10 @@ class SearchEngine:
 
         enriched = []
 
-        # Get all article and chunk IDs we need to fetch
-        txtai_ids = [r['id'] for r in results]
-
-        # Create a mapping of txtai_id -> score
-        score_map = {r['id']: r['score'] for r in results}
+        # With content=False, txtai returns tuples: (id, score)
+        # Extract IDs and create score mapping
+        txtai_ids = [r[0] for r in results]  # r[0] is the id
+        score_map = {r[0]: r[1] for r in results}  # r[0]=id, r[1]=score
 
         cursor = self.db_conn.cursor()
 
