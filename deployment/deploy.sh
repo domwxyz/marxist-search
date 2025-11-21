@@ -88,16 +88,49 @@ fi
 
 log_info "Installing system dependencies..."
 
+# Detect available Python 3 version
+PYTHON_CMD=""
+for version in 3.12 3.11 3.10 3.9; do
+    if command_exists "python$version"; then
+        PYTHON_CMD="python$version"
+        PYTHON_VERSION="$version"
+        log_info "Found Python $version"
+        break
+    fi
+done
+
+# If no specific version found, check for python3
+if [ -z "$PYTHON_CMD" ]; then
+    if command_exists python3; then
+        PYTHON_CMD="python3"
+        PYTHON_VERSION=$(python3 --version | awk '{print $2}' | cut -d. -f1,2)
+        log_info "Using system python3 (version $PYTHON_VERSION)"
+    else
+        log_error "No Python 3 installation found!"
+        exit 1
+    fi
+fi
+
+# Check if Python version is sufficient (>= 3.9)
+PYTHON_MAJOR=$(echo "$PYTHON_VERSION" | cut -d. -f1)
+PYTHON_MINOR=$(echo "$PYTHON_VERSION" | cut -d. -f2)
+if [ "$PYTHON_MAJOR" -lt 3 ] || ([ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 9 ]); then
+    log_error "Python 3.9 or higher is required. Found: $PYTHON_VERSION"
+    exit 1
+fi
+
+log_success "Using Python $PYTHON_VERSION at $(which $PYTHON_CMD)"
+
 apt-get update
 apt-get install -y \
-    python3.11 \
-    python3.11-venv \
+    python3 \
+    python3-venv \
     python3-pip \
+    python3-dev \
     nginx \
     git \
     curl \
     build-essential \
-    python3.11-dev \
     certbot \
     python3-certbot-nginx
 
@@ -172,14 +205,22 @@ log_info "Setting up Python virtual environment..."
 
 cd "$APP_DIR/backend"
 
-# Create venv as app user
-sudo -u "$APP_USER" python3.11 -m venv venv
+# Create venv as app user using detected Python version
+log_info "Creating virtual environment with $PYTHON_CMD..."
+sudo -u "$APP_USER" "$PYTHON_CMD" -m venv venv
+
+# Verify venv was created successfully
+if [ ! -f "venv/bin/python" ]; then
+    log_error "Failed to create virtual environment"
+    exit 1
+fi
 
 # Install dependencies
+log_info "Installing Python dependencies..."
 sudo -u "$APP_USER" venv/bin/pip install --upgrade pip setuptools wheel
 sudo -u "$APP_USER" venv/bin/pip install -r requirements.txt
 
-log_success "Python environment configured"
+log_success "Python environment configured with $(venv/bin/python --version)"
 
 # ============================================================================
 # Frontend Build
