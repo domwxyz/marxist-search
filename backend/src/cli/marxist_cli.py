@@ -18,9 +18,15 @@ from rich.console import Console
 from rich.table import Table
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 from rich import print as rprint
+from dotenv import load_dotenv
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+# Load .env file if it exists (for production paths)
+env_path = Path(__file__).parent.parent.parent / '.env'
+if env_path.exists():
+    load_dotenv(env_path)
 
 from config.search_config import DATABASE_PATH, RSS_FEEDS_CONFIG, INDEX_PATH, TERMS_CONFIG, LOG_LEVEL
 from src.ingestion.archiving_service import run_archiving, ArchivingService, run_update as run_archiving_update
