@@ -191,20 +191,22 @@ cp -r "$PROJECT_ROOT/frontend" "$APP_DIR/"
 # Copy configuration files if they don't exist
 if [ ! -f "$APP_DIR/backend/.env" ]; then
     cp "$SCRIPT_DIR/.env.production.example" "$APP_DIR/backend/.env"
-
-    # Set CORS origins with the domain
-    sed -i "s|# ALLOWED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com|ALLOWED_ORIGINS=https://$DOMAIN,https://www.$DOMAIN,http://$DOMAIN,http://www.$DOMAIN|g" "$APP_DIR/backend/.env"
-
-    # Uncomment production data paths (needed for CLI commands)
-    sed -i 's/^# DATA_DIR=/DATA_DIR=/' "$APP_DIR/backend/.env"
-    sed -i 's/^# DATABASE_PATH=/DATABASE_PATH=/' "$APP_DIR/backend/.env"
-    sed -i 's/^# INDEX_PATH=/INDEX_PATH=/' "$APP_DIR/backend/.env"
-    sed -i 's/^# CACHE_PATH=/CACHE_PATH=/' "$APP_DIR/backend/.env"
-
-    log_success "Created .env file with CORS and data paths configured for $DOMAIN"
-else
-    log_warning ".env file already exists - skipping"
+    log_info "Created .env file from template"
 fi
+
+# Always configure .env for production (in case of updates or manual edits)
+log_info "Configuring .env for production..."
+
+# Set CORS origins with the domain
+sed -i "s|# ALLOWED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com|ALLOWED_ORIGINS=https://$DOMAIN,https://www.$DOMAIN,http://$DOMAIN,http://www.$DOMAIN|g" "$APP_DIR/backend/.env"
+
+# Uncomment production data paths (needed for CLI commands)
+sed -i 's/^# DATA_DIR=/DATA_DIR=/' "$APP_DIR/backend/.env"
+sed -i 's/^# DATABASE_PATH=/DATABASE_PATH=/' "$APP_DIR/backend/.env"
+sed -i 's/^# INDEX_PATH=/INDEX_PATH=/' "$APP_DIR/backend/.env"
+sed -i 's/^# CACHE_PATH=/CACHE_PATH=/' "$APP_DIR/backend/.env"
+
+log_success "Environment configured with CORS and data paths for $DOMAIN"
 
 chown -R "$APP_USER:$APP_GROUP" "$APP_DIR"
 
