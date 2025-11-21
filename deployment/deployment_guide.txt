@@ -39,10 +39,14 @@ TABLE OF CONTENTS
 Server Requirements:
 -------------------
 - Linux VPS (Ubuntu 22.04 LTS or 24.04 LTS recommended)
+- Python 3.9 or higher (3.12 recommended for Ubuntu 24.04)
 - 4GB RAM minimum (for 16k+ articles)
 - 2 vCPUs minimum
 - 80GB SSD storage
 - DigitalOcean $24/month droplet or equivalent
+
+Note: The deployment script automatically detects your Python version.
+Ubuntu 24.04 comes with Python 3.12, Ubuntu 22.04 with Python 3.10.
 
 Local Requirements:
 ------------------
@@ -157,16 +161,19 @@ Step 1: Install System Dependencies
 -----------------------------------
 sudo apt update
 sudo apt install -y \
-    python3.11 \
-    python3.11-venv \
+    python3 \
+    python3-venv \
     python3-pip \
+    python3-dev \
     nginx \
     git \
     curl \
     build-essential \
-    python3.11-dev \
     certbot \
     python3-certbot-nginx
+
+# Verify Python version (should be 3.9 or higher)
+python3 --version
 
 Step 2: Install Node.js (for frontend build)
 --------------------------------------------
@@ -203,9 +210,12 @@ sudo chown -R marxist:marxist /opt/marxist-search
 Step 6: Set Up Python Environment
 ---------------------------------
 cd /opt/marxist-search/backend
-sudo -u marxist python3.11 -m venv venv
+sudo -u marxist python3 -m venv venv
 sudo -u marxist venv/bin/pip install --upgrade pip setuptools wheel
 sudo -u marxist venv/bin/pip install -r requirements.txt
+
+# Verify virtual environment
+sudo -u marxist venv/bin/python --version
 
 Step 7: Build Frontend
 ----------------------
