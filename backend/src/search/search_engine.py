@@ -5,7 +5,7 @@ Core search engine implementation with filtering and deduplication.
 import sqlite3
 import threading
 from typing import List, Dict, Optional, Any
-from datetime import datetime
+from datetime import datetime, timedelta
 from collections import defaultdict
 import logging
 import json
@@ -133,17 +133,13 @@ class SearchEngine:
 
         start_time = datetime.now()
 
-        # Build WHERE clause from filters
-        where_clause = SearchFilters.build_where_clause(filters)
-
-        # Execute txtai search to get ALL results for proper total count
-        # We need to fetch enough results to ensure we get all matches after deduplication
-        # Using a large limit (10000) to capture all realistic search results
+        # Execute txtai search WITHOUT SQL filters (prevents cursor recursion)
+        # Fetch large limit (half corpus) to ensure we get comprehensive results
+        # Filters are applied in Python afterward for safety and performance
         try:
             raw_results = self._execute_txtai_search(
                 query=query,
-                where=where_clause,
-                limit=10000  # Large limit to get all/most results
+                limit=8000  # ~50% of corpus, no cursor issues
             )
 
             logger.debug(f"txtai returned {len(raw_results)} raw results")
@@ -152,8 +148,15 @@ class SearchEngine:
             logger.error(f"Search failed: {e}")
             raise
 
+        # Apply filters in Python (safer than SQL WHERE clause)
+        if filters:
+            filtered_results = self._apply_filters(raw_results, filters)
+            logger.debug(f"Filtered {len(raw_results)} -> {len(filtered_results)} results")
+        else:
+            filtered_results = raw_results
+
         # Deduplicate and rank results to get true total count
-        deduplicated = self._deduplicate_results(raw_results)
+        deduplicated = self._deduplicate_results(filtered_results)
         total_count = len(deduplicated)
 
         # Apply recency boosting
@@ -258,37 +261,167 @@ class SearchEngine:
         expanded = " ".join(expanded_parts)
         return expanded
 
+    def _apply_filters(self, results: List[Dict], filters: Dict[str, Any]) -> List[Dict]:
+        """
+        Apply filters to search results in Python (safer than SQL WHERE).
+
+        This avoids SQLite cursor recursion issues while providing the same
+        filtering functionality.
+
+        Args:
+            results: Raw search results from txtai
+            filters: Filter parameters (source, author, date_range, etc.)
+
+        Returns:
+            Filtered list of results
+        """
+        filtered = []
+
+        for result in results:
+            # Source filter
+            if filters.get('source'):
+                if result.get('source') != filters['source']:
+                    continue
+
+            # Author filter
+            if filters.get('author'):
+                if result.get('author') != filters['author']:
+                    continue
+
+            # Year filter
+            if filters.get('published_year'):
+                if result.get('published_year') != int(filters['published_year']):
+                    continue
+
+            # Word count filter
+            if filters.get('min_word_count'):
+                word_count = result.get('word_count', 0)
+                if word_count < int(filters['min_word_count']):
+                    continue
+
+            # Date range filters
+            if not self._matches_date_filter(result, filters):
+                continue
+
+            # Passed all filters
+            filtered.append(result)
+
+        return filtered
+
+    def _matches_date_filter(self, result: Dict, filters: Dict[str, Any]) -> bool:
+        """
+        Check if result matches date filter criteria.
+
+        Supports:
+        - Date range presets: past_week, past_month, past_3months, past_year
+        - Decade ranges: 2020s, 2010s, 2000s, 1990s
+        - Custom ranges: start_date, end_date
+
+        Args:
+            result: Search result with published_date
+            filters: Filter parameters
+
+        Returns:
+            True if matches date filter (or no date filter), False otherwise
+        """
+        date_range = filters.get('date_range', '').lower()
+        published_date_str = result.get('published_date')
+
+        # No date filter
+        if not date_range and not filters.get('start_date') and not filters.get('end_date'):
+            return True
+
+        # Parse published date
+        if not published_date_str:
+            return False
+
+        try:
+            # Parse ISO format date
+            if isinstance(published_date_str, str):
+                pub_date = datetime.fromisoformat(published_date_str.replace('Z', '+00:00'))
+                if pub_date.tzinfo is not None:
+                    pub_date = pub_date.replace(tzinfo=None)
+            else:
+                pub_date = published_date_str
+                if hasattr(pub_date, 'tzinfo') and pub_date.tzinfo is not None:
+                    pub_date = pub_date.replace(tzinfo=None)
+        except (ValueError, AttributeError):
+            return False
+
+        # Date range presets
+        now = datetime.now()
+
+        if date_range == 'past_week':
+            cutoff = now - timedelta(days=7)
+            return pub_date >= cutoff
+        elif date_range == 'past_month':
+            cutoff = now - timedelta(days=30)
+            return pub_date >= cutoff
+        elif date_range == 'past_3months':
+            cutoff = now - timedelta(days=90)
+            return pub_date >= cutoff
+        elif date_range == 'past_year':
+            cutoff = now - timedelta(days=365)
+            return pub_date >= cutoff
+
+        # Decade ranges (use published_year from result)
+        published_year = result.get('published_year')
+        if date_range == '2020s':
+            return published_year >= 2020 and published_year <= 2029
+        elif date_range == '2010s':
+            return published_year >= 2010 and published_year <= 2019
+        elif date_range == '2000s':
+            return published_year >= 2000 and published_year <= 2009
+        elif date_range == '1990s':
+            return published_year >= 1990 and published_year <= 1999
+
+        # Custom date range
+        start_date = filters.get('start_date')
+        end_date = filters.get('end_date')
+
+        if start_date and end_date:
+            try:
+                start = datetime.strptime(start_date, '%Y-%m-%d')
+                end = datetime.strptime(end_date, '%Y-%m-%d')
+                return start <= pub_date <= end
+            except ValueError:
+                return False
+        elif start_date:
+            try:
+                start = datetime.strptime(start_date, '%Y-%m-%d')
+                return pub_date >= start
+            except ValueError:
+                return False
+        elif end_date:
+            try:
+                end = datetime.strptime(end_date, '%Y-%m-%d')
+                return pub_date <= end
+            except ValueError:
+                return False
+
+        return True
+
     def _execute_txtai_search(
         self,
         query: str,
-        where: Optional[str],
         limit: int
     ) -> List[Dict]:
         """
-        Execute txtai hybrid search.
+        Execute txtai hybrid search (semantic only, no SQL filters).
 
         Thread-safe read operation.
         """
         # Build SQL query for txtai 7.x with content storage
-        # This retrieves all metadata fields from the stored documents
+        # Only use similarity search - filters applied in Python afterward
+        # This avoids SQLite cursor recursion issues with complex WHERE clauses
         sql_query = f"""
             SELECT id, text, article_id, title, url, source, author,
                    published_date, published_year, published_month,
                    word_count, is_chunk, chunk_index, tags, terms, score
             FROM txtai
             WHERE similar('{query.replace("'", "''")}', {self.semantic_weight})
+            LIMIT {limit}
         """
-
-        # Add WHERE clause if filters provided
-        if where:
-            # Insert WHERE conditions after the similar() clause
-            sql_query = sql_query.replace(
-                f"WHERE similar('{query.replace("'", "''")}', {self.semantic_weight})",
-                f"WHERE similar('{query.replace("'", "''")}', {self.semantic_weight}) AND ({where})"
-            )
-
-        # Add LIMIT clause
-        sql_query += f" LIMIT {limit}"
 
         # Execute SQL search (thread-safe)
         results = self.embeddings.search(sql_query)
