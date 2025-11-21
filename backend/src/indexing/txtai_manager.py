@@ -29,11 +29,11 @@ class TxtaiManager:
         # Default configuration for txtai 7.x
         self.config = config or {
             "path": "BAAI/bge-small-en-v1.5",
-            "content": True,  # Enable content storage in SQLite
-            "keyword": True,  # Enable hybrid search (semantic + BM25)
-            "backend": "numpy",  # CPU-only exact search, no additional dependencies needed
-            # In txtai 7.x, 'columns' is just for field mapping, not SQL schema
-            # All fields in the metadata dict are automatically stored
+            "content": False,  # Disable content storage to avoid SQLite cursor recursion
+            "keyword": True,   # Enable hybrid search (semantic + BM25)
+            "backend": "numpy" # CPU-only exact search, no additional dependencies needed
+            # With content=False, metadata is fetched from articles.db instead
+            # This eliminates txtai's internal SQLite database and cursor conflicts
         }
 
         self.embeddings: Optional[Embeddings] = None
@@ -91,30 +91,19 @@ class TxtaiManager:
 
         logger.info(f"Indexing {len(documents)} documents...")
 
-        # Transform documents to txtai 7.x format
-        # With content storage, txtai expects flat dictionaries with all fields
+        # Transform documents to txtai format
+        # With content=False, we only store id and text for embeddings
+        # All metadata is fetched from articles.db during search
         txtai_docs = []
 
         for idx, doc in enumerate(documents):
-            # Create flat dictionary with all fields
-            # In txtai 7.x, all fields are stored at the same level
-            txtai_doc = {
-                'id': doc.get('id', idx),
-                'text': doc.get('content', ''),  # 'text' is the indexed content field
-                'article_id': doc.get('article_id', doc.get('id')),
-                'title': doc.get('title', ''),
-                'url': doc.get('url', ''),
-                'source': doc.get('source', ''),
-                'author': doc.get('author', ''),
-                'published_date': str(doc.get('published_date', '')),
-                'published_year': doc.get('published_year', 0),
-                'published_month': doc.get('published_month', 0),
-                'word_count': doc.get('word_count', 0),
-                'is_chunk': doc.get('is_chunk', False),
-                'chunk_index': doc.get('chunk_index', 0),
-                'terms': json.dumps(doc.get('terms', [])),
-                'tags': json.dumps(doc.get('tags', []))
-            }
+            # Only store id and text (content to embed)
+            # Metadata will be fetched from articles.db when needed
+            txtai_doc = (
+                doc.get('id', idx),           # Document ID
+                doc.get('content', ''),       # Text to embed and search
+                None                          # No additional metadata stored
+            )
 
             txtai_docs.append(txtai_doc)
 
@@ -146,29 +135,19 @@ class TxtaiManager:
 
         logger.info(f"Upserting {len(documents)} documents...")
 
-        # Transform documents to txtai 7.x format
-        # With content storage, txtai expects flat dictionaries with all fields
+        # Transform documents to txtai format
+        # With content=False, we only store id and text for embeddings
+        # All metadata is fetched from articles.db during search
         txtai_docs = []
 
         for idx, doc in enumerate(documents):
-            # Create flat dictionary with all fields
-            txtai_doc = {
-                'id': doc.get('id', idx),
-                'text': doc.get('content', ''),  # 'text' is the indexed content field
-                'article_id': doc.get('article_id', doc.get('id')),
-                'title': doc.get('title', ''),
-                'url': doc.get('url', ''),
-                'source': doc.get('source', ''),
-                'author': doc.get('author', ''),
-                'published_date': str(doc.get('published_date', '')),
-                'published_year': doc.get('published_year', 0),
-                'published_month': doc.get('published_month', 0),
-                'word_count': doc.get('word_count', 0),
-                'is_chunk': doc.get('is_chunk', False),
-                'chunk_index': doc.get('chunk_index', 0),
-                'terms': json.dumps(doc.get('terms', [])),
-                'tags': json.dumps(doc.get('tags', []))
-            }
+            # Only store id and text (content to embed)
+            # Metadata will be fetched from articles.db when needed
+            txtai_doc = (
+                doc.get('id', idx),           # Document ID
+                doc.get('content', ''),       # Text to embed and search
+                None                          # No additional metadata stored
+            )
 
             txtai_docs.append(txtai_doc)
 

@@ -407,26 +407,119 @@ class SearchEngine:
         limit: int
     ) -> List[Dict]:
         """
-        Execute txtai hybrid search (semantic only, no SQL filters).
+        Execute txtai hybrid search (semantic only, no content storage).
+
+        With content=False, txtai only stores embeddings and metadata IDs.
+        We fetch actual content from articles.db afterward.
 
         Thread-safe read operation.
         """
-        # Build SQL query for txtai 7.x with content storage
+        # Build SQL query for txtai 7.x WITHOUT content storage
         # Only use similarity search - filters applied in Python afterward
-        # This avoids SQLite cursor recursion issues with complex WHERE clauses
+        # This avoids SQLite cursor recursion issues entirely
         sql_query = f"""
-            SELECT id, text, article_id, title, url, source, author,
-                   published_date, published_year, published_month,
-                   word_count, is_chunk, chunk_index, tags, terms, score
+            SELECT id, score
             FROM txtai
             WHERE similar('{query.replace("'", "''")}', {self.semantic_weight})
             LIMIT {limit}
         """
 
         # Execute SQL search (thread-safe)
+        # Returns list of (id, score) tuples
         results = self.embeddings.search(sql_query)
 
-        return results
+        # Fetch metadata from articles.db for these IDs
+        enriched_results = self._enrich_with_metadata(results)
+
+        return enriched_results
+
+    def _enrich_with_metadata(self, results: List[Dict]) -> List[Dict]:
+        """
+        Enrich txtai results with metadata from articles.db.
+
+        Since content=False in txtai config, we only get (id, score) from txtai.
+        This fetches all metadata from our articles.db database.
+
+        Args:
+            results: List of dicts with 'id' and 'score' from txtai
+
+        Returns:
+            List of dicts with full metadata from articles.db
+        """
+        if not results:
+            return []
+
+        self.connect_db()
+
+        enriched = []
+
+        # Get all article and chunk IDs we need to fetch
+        txtai_ids = [r['id'] for r in results]
+
+        # Create a mapping of txtai_id -> score
+        score_map = {r['id']: r['score'] for r in results}
+
+        # Fetch article data for full articles (where id = article_id or is_chunked = 0)
+        # Fetch chunk data for chunks (from article_chunks table)
+        cursor = self.db_conn.cursor()
+
+        # Create placeholders for SQL IN clause
+        placeholders = ','.join('?' * len(txtai_ids))
+
+        # Fetch articles and chunks
+        # Try to match txtai IDs to either article IDs or chunk IDs
+        query = f"""
+            SELECT
+                a.id as article_id,
+                a.title,
+                a.url,
+                a.source,
+                a.author,
+                a.published_date,
+                a.content,
+                a.word_count,
+                a.terms_json as terms,
+                a.tags_json as tags,
+                CAST(strftime('%Y', a.published_date) AS INTEGER) as published_year,
+                CAST(strftime('%m', a.published_date) AS INTEGER) as published_month,
+                CASE
+                    WHEN ac.id IS NOT NULL THEN 1
+                    ELSE 0
+                END as is_chunk,
+                COALESCE(ac.chunk_index, 0) as chunk_index,
+                COALESCE(ac.content, a.content) as text,
+                COALESCE(ac.id, a.id) as id
+            FROM articles a
+            LEFT JOIN article_chunks ac ON ac.article_id = a.id
+            WHERE a.id IN ({placeholders}) OR ac.id IN ({placeholders})
+        """
+
+        cursor.execute(query, txtai_ids + txtai_ids)
+
+        for row in cursor.fetchall():
+            result = {
+                'id': row['id'],
+                'article_id': row['article_id'],
+                'title': row['title'],
+                'url': row['url'],
+                'source': row['source'],
+                'author': row['author'],
+                'published_date': row['published_date'],
+                'published_year': row['published_year'],
+                'published_month': row['published_month'],
+                'word_count': row['word_count'],
+                'is_chunk': row['is_chunk'],
+                'chunk_index': row['chunk_index'],
+                'text': row['text'],
+                'tags': row['tags'],
+                'terms': row['terms'],
+                'score': score_map.get(row['id'], 0.0)
+            }
+            enriched.append(result)
+
+        logger.debug(f"Enriched {len(enriched)} results with metadata from articles.db")
+
+        return enriched
 
     def _deduplicate_results(self, results: List[Dict]) -> List[Dict]:
         """

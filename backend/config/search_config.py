@@ -28,27 +28,15 @@ ANALYTICS_CONFIG = str(CONFIG_DIR / "analytics_config.json")
 # txtai Configuration
 TXTAI_CONFIG = {
     "path": "BAAI/bge-small-en-v1.5",
-    "content": True,
+    # Disable content storage to avoid SQLite cursor recursion errors
+    # Content is fetched from articles.db instead during result formatting
+    # This eliminates txtai's internal SQLite database entirely
+    "content": False,
     "keyword": True,
     # Use numpy backend instead of faiss to avoid nflip AttributeError
     # numpy provides CPU-only exact search without requiring additional dependencies
     # It's slower than FAISS for very large datasets but more reliable and already installed
-    "backend": "numpy",
-    "columns": {
-        "id": "INTEGER PRIMARY KEY",
-        "article_id": "INTEGER",
-        "title": "TEXT",
-        "url": "TEXT",
-        "source": "TEXT",
-        "author": "TEXT",
-        "published_date": "DATETIME",
-        "published_year": "INTEGER",
-        "published_month": "INTEGER",
-        "word_count": "INTEGER",
-        "is_chunk": "BOOLEAN",
-        "terms": "TEXT",
-        "tags": "TEXT"
-    }
+    "backend": "numpy"
 }
 
 # Chunking Configuration
