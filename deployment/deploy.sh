@@ -151,7 +151,13 @@ cp -r "$PROJECT_ROOT/frontend" "$APP_DIR/"
 # Copy configuration files if they don't exist
 if [ ! -f "$APP_DIR/backend/.env" ]; then
     cp "$SCRIPT_DIR/.env.production.example" "$APP_DIR/backend/.env"
-    log_warning "Created .env file - please configure it!"
+
+    # Set CORS origins with the domain
+    sed -i "s|# ALLOWED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com|ALLOWED_ORIGINS=https://$DOMAIN,https://www.$DOMAIN,http://$DOMAIN,http://www.$DOMAIN|g" "$APP_DIR/backend/.env"
+
+    log_success "Created .env file with CORS configured for $DOMAIN"
+else
+    log_warning ".env file already exists - skipping"
 fi
 
 chown -R "$APP_USER:$APP_GROUP" "$APP_DIR"

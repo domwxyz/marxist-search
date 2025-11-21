@@ -2,6 +2,7 @@
 FastAPI main application for Marxist Search Engine.
 """
 
+import os
 import logging
 import logging.config
 from contextlib import asynccontextmanager
@@ -76,16 +77,21 @@ app = FastAPI(
 # CORS Configuration
 # ============================================================================
 
+allowed_origins = [
+    "http://localhost:5173",  # Vite dev server
+    "http://localhost:3000",  # Alternative dev port
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:3000",
+]
+
+# Add production origins from environment variable
+if production_origins := os.getenv("ALLOWED_ORIGINS"):
+    allowed_origins.extend([origin.strip() for origin in production_origins.split(",")])
+
 # Allow frontend to access API
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",  # Vite dev server
-        "http://localhost:3000",  # Alternative dev port
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:3000",
-        # Add production domain when deployed
-    ],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

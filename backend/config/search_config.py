@@ -7,18 +7,20 @@ from pathlib import Path
 
 # Base directories
 BASE_DIR = Path(__file__).parent.parent
-DATA_DIR = BASE_DIR / "data"
 CONFIG_DIR = BASE_DIR / "config"
+
+# Data directory - use environment variable in production, local path in development
+DATA_DIR = Path(os.getenv("DATA_DIR", str(BASE_DIR / "data")))
 
 # Ensure data directories exist
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 (DATA_DIR / "cache").mkdir(exist_ok=True)
 (DATA_DIR / "txtai").mkdir(exist_ok=True)
 
-# Database paths
-DATABASE_PATH = str(DATA_DIR / "articles.db")
-INDEX_PATH = str(DATA_DIR / "txtai")
-CACHE_PATH = str(DATA_DIR / "cache")
+# Database paths - support environment variable overrides for production
+DATABASE_PATH = os.getenv("DATABASE_PATH", str(DATA_DIR / "articles.db"))
+INDEX_PATH = os.getenv("INDEX_PATH", str(DATA_DIR / "txtai"))
+CACHE_PATH = os.getenv("CACHE_PATH", str(DATA_DIR / "cache"))
 
 # Configuration file paths
 RSS_FEEDS_CONFIG = str(CONFIG_DIR / "rss_feeds.json")
