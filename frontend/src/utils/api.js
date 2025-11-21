@@ -48,12 +48,14 @@ export const searchArticles = async (query, filters = {}) => {
 };
 
 export const getTopAuthors = async (minArticles = 10) => {
-  const url = new URL(`${BASE_URL}/top-authors`);
+  // Build URL with query parameters manually to support relative URLs
+  // (URL constructor requires absolute URLs and fails with relative paths like /api/v1)
+  let url = `${BASE_URL}/top-authors`;
   if (minArticles) {
-    url.searchParams.append('min_articles', minArticles);
+    url += `?min_articles=${minArticles}`;
   }
 
-  const response = await fetch(url.toString());
+  const response = await fetch(url);
   return handleResponse(response);
 };
 
