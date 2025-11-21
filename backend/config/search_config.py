@@ -59,6 +59,15 @@ SEARCH_CONFIG = {
     }
 }
 
+# Title Weighting Configuration
+# Prepend article title N times to content before embedding
+# This weights title matching in semantic search results
+# Higher values = stronger title matching (recommended: 5x)
+# Only applies to:
+#   - Non-chunked articles (always)
+#   - First chunk of chunked articles (chunk_index=0)
+TITLE_WEIGHT_MULTIPLIER = 5
+
 # Content Extraction Configuration
 CONTENT_CONFIG = {
     "min_content_length": 200,
