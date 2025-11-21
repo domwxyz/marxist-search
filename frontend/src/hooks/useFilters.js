@@ -57,9 +57,13 @@ export const useFilters = () => {
       apiFilters.date_range = filters.dateRange;
     }
 
-    if (filters.customStartDate && filters.customEndDate) {
-      apiFilters.custom_start = filters.customStartDate;
-      apiFilters.custom_end = filters.customEndDate;
+    if (filters.customStartDate || filters.customEndDate) {
+      if (filters.customStartDate) {
+        apiFilters.start_date = filters.customStartDate;
+      }
+      if (filters.customEndDate) {
+        apiFilters.end_date = filters.customEndDate;
+      }
     }
 
     return apiFilters;
