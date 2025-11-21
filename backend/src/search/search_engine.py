@@ -409,28 +409,19 @@ class SearchEngine:
         self,
         query: str,
         limit: int
-    ) -> List[Dict]:
+    ) -> List:
         """
         Execute txtai hybrid search (semantic only, no content storage).
 
-        With content=False, txtai only stores embeddings and metadata IDs.
-        We fetch actual content from articles.db afterward.
+        With content=False, txtai only stores embeddings - no SQL database.
+        We use the Python API instead of SQL queries.
 
         Thread-safe read operation.
         """
-        # Build SQL query for txtai 7.x WITHOUT content storage
-        # Only use similarity search - filters applied in Python afterward
-        # This avoids SQLite cursor recursion issues entirely
-        sql_query = f"""
-            SELECT id, score
-            FROM txtai
-            WHERE similar('{query.replace("'", "''")}', {self.semantic_weight})
-            LIMIT {limit}
-        """
-
-        # Execute SQL search (thread-safe)
-        # Returns list of (id, score) tuples
-        results = self.embeddings.search(sql_query)
+        # With content=False, use Python API (not SQL)
+        # txtai doesn't have an internal database to query
+        # Returns list of tuples: (id, score)
+        results = self.embeddings.search(query, limit)
 
         # Fetch lightweight metadata for filtering (no full content)
         # This is MUCH faster than fetching full content for all 8000 results
