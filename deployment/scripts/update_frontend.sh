@@ -36,20 +36,29 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
+REPO_DIR="/opt/marxist-search-repo"
 APP_DIR="/opt/marxist-search"
 APP_USER="marxist"
 
-# Check if app directory exists
+# Check if directories exist
+if [ ! -d "$REPO_DIR" ]; then
+    log_error "Repository directory not found: $REPO_DIR"
+    log_info "Move your repo from /tmp: sudo mv /tmp/marxist-search /opt/marxist-search-repo"
+    exit 1
+fi
+
 if [ ! -d "$APP_DIR" ]; then
     log_error "Application directory not found: $APP_DIR"
     exit 1
 fi
 
 log_info "Starting frontend update process..."
+log_info "Repository: $REPO_DIR"
+log_info "Production: $APP_DIR"
 
-# Step 1: Pull latest changes
+# Step 1: Pull latest changes in repo
 log_info "Pulling latest changes from git..."
-cd "$APP_DIR"
+cd "$REPO_DIR"
 CURRENT_BRANCH=$(sudo -u $APP_USER git rev-parse --abbrev-ref HEAD)
 log_info "Current branch: $CURRENT_BRANCH"
 
@@ -57,28 +66,36 @@ sudo -u $APP_USER git fetch origin
 sudo -u $APP_USER git pull origin "$CURRENT_BRANCH"
 log_success "Git pull completed"
 
-# Step 2: Rebuild frontend
+# Step 2: Copy updated frontend to production
+log_info "Copying frontend files to production..."
+cp -r "$REPO_DIR/frontend"/* "$APP_DIR/frontend/"
+chown -R "$APP_USER:$APP_USER" "$APP_DIR/frontend"
+log_success "Files copied"
+
+# Step 3: Rebuild frontend
 log_info "Rebuilding frontend..."
 cd "$APP_DIR/frontend"
 
 # Check if package.json has changed
-if sudo -u $APP_USER git diff --name-only HEAD@{1} HEAD | grep -q "package.json"; then
-    log_info "package.json changed, running npm install..."
-    sudo -u $APP_USER npm install
-else
-    log_info "package.json unchanged, skipping npm install"
+if [ -f "$REPO_DIR/.git/ORIG_HEAD" ]; then
+    if sudo -u $APP_USER git -C "$REPO_DIR" diff --name-only ORIG_HEAD HEAD | grep -q "package.json"; then
+        log_info "package.json changed, running npm install..."
+        sudo -u $APP_USER npm install
+    else
+        log_info "package.json unchanged, skipping npm install"
+    fi
 fi
 
 sudo -u $APP_USER npm run build
 log_success "Frontend built successfully"
 
-# Step 3: Restart API service
+# Step 4: Restart API service
 log_info "Restarting API service..."
 systemctl restart marxist-search-api.service
 sleep 3
 log_success "API service restarted"
 
-# Step 4: Check service status
+# Step 5: Check service status
 log_info "Checking service status..."
 if systemctl is-active --quiet marxist-search-api.service; then
     log_success "✓ API service is running"
@@ -94,7 +111,7 @@ else
     log_error "✗ Update timer is not running"
 fi
 
-# Step 5: Test health endpoint
+# Step 6: Test health endpoint
 log_info "Testing health endpoint..."
 sleep 2
 if curl -s http://localhost:8000/api/v1/health | grep -q "healthy"; then
@@ -119,8 +136,7 @@ echo "  - API logs: tail -f /var/log/news-search/api.log"
 echo "  - Error logs: tail -f /var/log/news-search/errors.log"
 echo ""
 echo "Rollback (if needed):"
-echo "  cd $APP_DIR && sudo -u $APP_USER git reset --hard HEAD@{1}"
-echo "  cd $APP_DIR/frontend && sudo -u $APP_USER npm run build"
-echo "  sudo systemctl restart marxist-search-api.service"
+echo "  cd $REPO_DIR && sudo -u $APP_USER git reset --hard HEAD@{1}"
+echo "  cd $REPO_DIR && sudo ./deployment/scripts/update_frontend.sh"
 echo ""
 echo "========================================================================"
