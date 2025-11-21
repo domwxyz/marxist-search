@@ -144,9 +144,30 @@ What the script does automatically (NEW):
 - Sets up frontend to use relative URLs for API calls
 - Creates all necessary directories with correct permissions
 
-Step 3: Follow Post-Deployment Steps
+Step 3: Move Repository to Permanent Location
+----------------------------------------------
+IMPORTANT: The deploy script copies files from your git repo to /opt/marxist-search.
+Your git repo should be kept in a permanent location for future updates.
+
+# Move from /tmp (which gets cleared on reboot) to permanent location
+sudo mkdir -p /opt/marxist-search-repo
+sudo chown marxist:marxist /opt/marxist-search-repo
+sudo mv /tmp/marxist-search/* /opt/marxist-search-repo/
+sudo mv /tmp/marxist-search/.git /opt/marxist-search-repo/
+sudo mv /tmp/marxist-search/.gitignore /opt/marxist-search-repo/ 2>/dev/null || true
+sudo chown -R marxist:marxist /opt/marxist-search-repo
+
+# Verify it worked
+cd /opt/marxist-search-repo
+sudo -u marxist git status
+
+Now you have:
+- /opt/marxist-search-repo - Git repository (for pulling updates)
+- /opt/marxist-search - Production deployment (running code)
+
+Step 4: Follow Post-Deployment Steps
 ------------------------------------
-After the script completes, continue to Section 6 for initial data setup.
+After moving the repo, continue to Section 6 for initial data setup.
 Section 5 (configuration) is now mostly automated - only review if you
 need custom settings.
 
@@ -518,6 +539,53 @@ sudo systemctl start marxist-search-update.service
 
 # View update history
 sudo journalctl -u marxist-search-update.service --since "1 week ago"
+
+Code Updates
+------------
+The deployment uses a two-directory structure:
+- /opt/marxist-search-repo - Git repository (for pulling updates)
+- /opt/marxist-search - Production deployment (running code, NOT a git repo)
+
+IMPORTANT: Always keep your git repo outside /tmp to prevent data loss on reboot!
+
+For small code changes that don't require database/index rebuilds:
+
+# Update frontend only (logo, UI changes, styling)
+cd /opt/marxist-search-repo
+sudo ./deployment/scripts/update_frontend.sh
+
+# Update backend only (API logic, no index rebuild)
+cd /opt/marxist-search-repo
+sudo ./deployment/scripts/update_backend.sh
+
+These scripts will:
+1. Pull latest changes from git into the repo directory
+2. Copy updated files to production directory
+3. Rebuild frontend (if updating frontend) or install dependencies (if updating backend)
+4. Restart services
+5. Verify health
+
+For full rebuilds (database schema changes, index changes):
+1. Pull changes: cd /opt/marxist-search-repo && git pull
+2. Copy files: sudo cp -r backend/* /opt/marxist-search/backend/
+3. Run migrations or rebuild index as needed
+4. Restart: sudo systemctl restart marxist-search-api
+
+Manual code update (if scripts fail):
+# Pull latest
+cd /opt/marxist-search-repo
+sudo -u marxist git pull origin <branch-name>
+
+# Copy to production
+sudo cp -r /opt/marxist-search-repo/frontend/* /opt/marxist-search/frontend/
+sudo cp -r /opt/marxist-search-repo/backend/src /opt/marxist-search/backend/
+
+# Rebuild frontend
+cd /opt/marxist-search/frontend
+sudo -u marxist npm run build
+
+# Restart
+sudo systemctl restart marxist-search-api
 
 Database Maintenance
 -------------------

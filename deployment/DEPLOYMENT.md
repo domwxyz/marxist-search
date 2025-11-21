@@ -116,6 +116,15 @@ Follow the detailed instructions in `deployment_guide.txt`.
 
 ## Post-Deployment
 
+### Directory Structure
+
+After deployment, you'll have two key directories:
+
+- **`/opt/marxist-search-repo`** - Git repository (for pulling updates)
+- **`/opt/marxist-search`** - Production deployment (running code)
+
+**Important:** The production directory is NOT a git repo. Updates are pulled in the repo directory and copied to production.
+
 ### Service Management
 
 ```bash
@@ -130,11 +139,33 @@ sudo systemctl restart marxist-search-api
 tail -f /var/log/news-search/api.log
 ```
 
+### Updating Code
+
+For small changes that don't require database/index rebuilds:
+
+```bash
+# Update frontend (logo, UI changes, etc.)
+cd /opt/marxist-search-repo
+sudo ./deployment/scripts/update_frontend.sh
+
+# Update backend (API logic, no index rebuild)
+cd /opt/marxist-search-repo
+sudo ./deployment/scripts/update_backend.sh
+```
+
+These scripts will:
+1. Pull latest changes from git
+2. Copy updated files to production
+3. Rebuild/restart as needed
+4. Verify health
+
+**For full rebuilds** (database/index changes), see `deployment_guide.txt`.
+
 ### Health Check
 
 ```bash
-# Run health check script (from project deployment directory)
-cd /path/to/marxist-search/deployment
+# Run health check script
+cd /opt/marxist-search-repo/deployment
 ./scripts/health_check.sh
 
 # Or check API directly
@@ -144,28 +175,37 @@ curl http://localhost:8000/api/v1/health
 ### Backups
 
 ```bash
-# Run backup script (from project deployment directory)
-cd /path/to/marxist-search/deployment
+# Run backup script
+cd /opt/marxist-search-repo/deployment
 ./scripts/backup.sh
 
 # Or set up automated backups via cron
-# Note: Use absolute paths in crontab
 sudo crontab -e
-# Add: 0 2 * * * /usr/local/bin/backup-marxist-search.sh
-# (Copy the script to /usr/local/bin/ for cron usage)
+# Add: 0 2 * * * /opt/marxist-search-repo/deployment/scripts/backup.sh
 ```
 
 ## Directory Structure on Server
 
 ```
-/opt/marxist-search/           # Application code
+/opt/marxist-search-repo/      # Git repository (source)
 ├── backend/
 │   ├── src/
 │   ├── config/
-│   ├── venv/
-│   └── .env
+│   └── requirements.txt
+├── frontend/
+│   ├── src/
+│   └── package.json
+└── deployment/
+    └── scripts/               # Update scripts
+
+/opt/marxist-search/           # Production deployment (running code)
+├── backend/
+│   ├── src/                   # Copied from repo
+│   ├── config/                # Copied from repo
+│   ├── venv/                  # Python virtual environment
+│   └── .env                   # Production config (NOT in git)
 └── frontend/
-    └── build/
+    └── build/                 # Built React app
 
 /var/lib/marxist-search/       # Data directory
 ├── articles.db

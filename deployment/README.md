@@ -17,7 +17,7 @@ sudo ./deploy.sh yourdomain.com
 - **deployment_guide.txt** - Comprehensive deployment guide (700+ lines)
 - **DEPLOYMENT.md** - Quick reference and overview
 - **systemd/** - Systemd service files
-- **scripts/** - Utility scripts (backup, health check)
+- **scripts/** - Utility scripts (backup, health check, updates)
 
 ## Documentation
 
@@ -47,6 +47,12 @@ Follow the step-by-step instructions in `deployment_guide.txt`.
 
 # Run backup
 ./scripts/backup.sh
+
+# Update frontend (logo, UI changes, etc.)
+sudo ./scripts/update_frontend.sh
+
+# Update backend (API logic, no index rebuild)
+sudo ./scripts/update_backend.sh
 ```
 
 ## Files
@@ -61,6 +67,8 @@ Follow the step-by-step instructions in `deployment_guide.txt`.
 | `systemd/marxist-search-update.timer` | Timer for automatic updates (30 min) |
 | `scripts/backup.sh` | Backup database and configuration |
 | `scripts/health_check.sh` | System health monitoring |
+| `scripts/update_frontend.sh` | Update frontend code and rebuild |
+| `scripts/update_backend.sh` | Update backend code (no index rebuild) |
 | `deployment_guide.txt` | Complete deployment manual |
 | `DEPLOYMENT.md` | Quick reference guide |
 
