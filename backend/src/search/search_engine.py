@@ -165,11 +165,15 @@ class SearchEngine:
         # Sort by final score
         sorted_results = sorted(boosted, key=lambda x: x['score'], reverse=True)
 
-        # Apply pagination
+        # Apply pagination BEFORE fetching content (this is the key optimization!)
         paginated = sorted_results[offset:offset + limit]
 
+        # Now fetch full content for ONLY the paginated results
+        # This is much faster than fetching content for all 8000 results
+        paginated_with_content = self._enrich_with_content(paginated)
+
         # Format results with excerpts
-        formatted = self._format_results(paginated, query)
+        formatted = self._format_results(paginated_with_content, query)
 
         # Calculate query time
         query_time_ms = int((datetime.now() - start_time).total_seconds() * 1000)
@@ -407,24 +411,164 @@ class SearchEngine:
         limit: int
     ) -> List[Dict]:
         """
-        Execute txtai hybrid search (semantic only, no SQL filters).
+        Execute txtai hybrid search (semantic only, no content storage).
+
+        With content=False, txtai only stores embeddings and metadata IDs.
+        We fetch actual content from articles.db afterward.
 
         Thread-safe read operation.
         """
-        # Build SQL query for txtai 7.x with content storage
+        # Build SQL query for txtai 7.x WITHOUT content storage
         # Only use similarity search - filters applied in Python afterward
-        # This avoids SQLite cursor recursion issues with complex WHERE clauses
+        # This avoids SQLite cursor recursion issues entirely
         sql_query = f"""
-            SELECT id, text, article_id, title, url, source, author,
-                   published_date, published_year, published_month,
-                   word_count, is_chunk, chunk_index, tags, terms, score
+            SELECT id, score
             FROM txtai
             WHERE similar('{query.replace("'", "''")}', {self.semantic_weight})
             LIMIT {limit}
         """
 
         # Execute SQL search (thread-safe)
+        # Returns list of (id, score) tuples
         results = self.embeddings.search(sql_query)
+
+        # Fetch lightweight metadata for filtering (no full content)
+        # This is MUCH faster than fetching full content for all 8000 results
+        enriched_results = self._enrich_with_filter_metadata(results)
+
+        return enriched_results
+
+    def _enrich_with_filter_metadata(self, results: List[Dict]) -> List[Dict]:
+        """
+        Enrich txtai results with lightweight metadata for filtering.
+
+        This fetches ONLY the fields needed for filtering, not full content.
+        Full content is fetched later for only the final paginated results.
+
+        Args:
+            results: List of dicts with 'id' and 'score' from txtai
+
+        Returns:
+            List of dicts with filter metadata (no content)
+        """
+        if not results:
+            return []
+
+        self.connect_db()
+
+        enriched = []
+
+        # Get all article and chunk IDs we need to fetch
+        txtai_ids = [r['id'] for r in results]
+
+        # Create a mapping of txtai_id -> score
+        score_map = {r['id']: r['score'] for r in results}
+
+        cursor = self.db_conn.cursor()
+
+        # Create placeholders for SQL IN clause
+        placeholders = ','.join('?' * len(txtai_ids))
+
+        # Fetch ONLY metadata needed for filtering (no content!)
+        # This is much faster than fetching full article text
+        query = f"""
+            SELECT
+                a.id as article_id,
+                a.title,
+                a.url,
+                a.source,
+                a.author,
+                a.published_date,
+                a.word_count,
+                a.terms_json as terms,
+                a.tags_json as tags,
+                CAST(strftime('%Y', a.published_date) AS INTEGER) as published_year,
+                CAST(strftime('%m', a.published_date) AS INTEGER) as published_month,
+                CASE
+                    WHEN ac.id IS NOT NULL THEN 1
+                    ELSE 0
+                END as is_chunk,
+                COALESCE(ac.chunk_index, 0) as chunk_index,
+                COALESCE(ac.id, a.id) as id
+            FROM articles a
+            LEFT JOIN article_chunks ac ON ac.article_id = a.id
+            WHERE a.id IN ({placeholders}) OR ac.id IN ({placeholders})
+        """
+
+        cursor.execute(query, txtai_ids + txtai_ids)
+
+        for row in cursor.fetchall():
+            result = {
+                'id': row['id'],
+                'article_id': row['article_id'],
+                'title': row['title'],
+                'url': row['url'],
+                'source': row['source'],
+                'author': row['author'],
+                'published_date': row['published_date'],
+                'published_year': row['published_year'],
+                'published_month': row['published_month'],
+                'word_count': row['word_count'],
+                'is_chunk': row['is_chunk'],
+                'chunk_index': row['chunk_index'],
+                'tags': row['tags'],
+                'terms': row['terms'],
+                'score': score_map.get(row['id'], 0.0),
+                'text': None  # No content yet - will be fetched later if needed
+            }
+            enriched.append(result)
+
+        logger.debug(f"Enriched {len(enriched)} results with filter metadata (no content)")
+
+        return enriched
+
+    def _enrich_with_content(self, results: List[Dict]) -> List[Dict]:
+        """
+        Enrich results with full content from articles.db.
+
+        This is called AFTER filtering/deduplication/pagination, so we only
+        fetch content for the small set of final results (e.g., 10-50 articles)
+        instead of all 8000 initial results.
+
+        Args:
+            results: List of result dicts that already have metadata but no content
+
+        Returns:
+            Same results enriched with 'text' field from articles.db
+        """
+        if not results:
+            return []
+
+        self.connect_db()
+
+        # Get IDs we need to fetch content for
+        result_ids = [r['id'] for r in results]
+
+        cursor = self.db_conn.cursor()
+        placeholders = ','.join('?' * len(result_ids))
+
+        # Fetch ONLY content for these specific IDs
+        query = f"""
+            SELECT
+                COALESCE(ac.id, a.id) as id,
+                COALESCE(ac.content, a.content) as text
+            FROM articles a
+            LEFT JOIN article_chunks ac ON ac.article_id = a.id
+            WHERE a.id IN ({placeholders}) OR ac.id IN ({placeholders})
+        """
+
+        cursor.execute(query, result_ids + result_ids)
+
+        # Create a map of id -> content
+        content_map = {}
+        for row in cursor.fetchall():
+            content_map[row['id']] = row['text']
+
+        # Add content to results
+        for result in results:
+            result['text'] = content_map.get(result['id'], '')
+
+        logger.debug(f"Enriched {len(results)} final results with content")
 
         return results
 
