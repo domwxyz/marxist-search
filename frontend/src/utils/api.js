@@ -1,4 +1,10 @@
-const BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1';
+// Use relative URL in production (nginx proxies /api/ to backend)
+// Falls back to localhost for local development
+const BASE_URL = process.env.REACT_APP_API_URL || (
+  process.env.NODE_ENV === 'production'
+    ? '/api/v1'
+    : 'http://localhost:8000/api/v1'
+);
 
 class ApiError extends Error {
   constructor(message, code, details) {

@@ -18,6 +18,12 @@ Environment="PYTHONPATH=/opt/marxist-search/backend"
 Environment="ENVIRONMENT=production"
 Environment="DEBUG=false"
 
+# Data paths (production)
+Environment="DATA_DIR=/var/lib/marxist-search"
+Environment="DATABASE_PATH=/var/lib/marxist-search/articles.db"
+Environment="INDEX_PATH=/var/lib/marxist-search/txtai"
+Environment="CACHE_PATH=/var/lib/marxist-search/cache"
+
 # Service execution
 ExecStart=/opt/marxist-search/backend/venv/bin/uvicorn \
     src.api.main:app \
