@@ -308,7 +308,9 @@ CMD ["nginx", "-g", "daemon off;"]
 
 ## Environment Variables
 
-### .env
+### Development (.env or .env.local)
+
+For local development:
 
 ```env
 # Backend API URL
@@ -318,12 +320,42 @@ REACT_APP_API_URL=http://localhost:8000/api/v1
 REACT_APP_DEBUG=false
 ```
 
-### Production .env
+### Production (.env.production)
+
+**IMPORTANT**: The repository includes a `.env.production` file that automatically configures the production build:
 
 ```env
-# Production API URL
-REACT_APP_API_URL=https://api.yourdomain.com/api/v1
+# Use relative URL so nginx can proxy /api/* to the backend
+REACT_APP_API_URL=/api/v1
 ```
+
+This ensures:
+- ✅ No CORS issues (same-origin requests)
+- ✅ Works with nginx proxy configuration
+- ✅ No need to change API URL when deploying
+
+**DO NOT** override this in production unless you have a specific reason!
+
+### Environment File Priority
+
+When running `npm run build`, Create React App loads files in this order:
+1. `.env.production.local` (git-ignored, highest priority)
+2. `.env.production` (included in repo, recommended)
+3. `.env.local` (git-ignored)
+4. `.env` (lowest priority)
+
+### Common Issue: Filter Dropdowns Not Populating
+
+If the Source and Author filter dropdowns are empty in production, this is usually caused by incorrect API URL configuration during the build.
+
+**Fix**: Ensure `.env.production` exists and is correctly configured, then rebuild:
+
+```bash
+cd /opt/marxist-search/frontend
+sudo -u marxist npm run build
+```
+
+See `FILTER_DROPDOWN_FIX.md` in the repository root for detailed troubleshooting.
 
 ## Browser Support
 
