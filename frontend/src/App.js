@@ -58,7 +58,7 @@ function App() {
             <img
               src="/logo.png"
               alt="Marxist Search Logo"
-              className="h-16 w-16 object-contain"
+              className="h-16 w-16 object-contain bg-white p-2 rounded-lg shadow-sm"
             />
             <div>
               <h1 className="text-3xl font-bold text-white">
