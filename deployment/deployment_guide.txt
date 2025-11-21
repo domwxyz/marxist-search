@@ -5,6 +5,19 @@ MARXIST SEARCH ENGINE - DEPLOYMENT GUIDE
 This guide provides step-by-step instructions for deploying the Marxist Search
 Engine to a Linux VPS (DigitalOcean, Linode, AWS, etc.).
 
+RECENT UPDATES (November 2025)
+-------------------------------
+✓ Automated CORS configuration - deploy.sh now auto-configures CORS based on
+  your domain, no manual editing needed
+✓ Environment variable support for production paths - systemd services now set
+  all paths via environment variables for cleaner configuration
+✓ Frontend API URL auto-detection - uses relative URLs in production, works
+  with any domain without rebuilding
+✓ Improved .env documentation - clearer guidance on what needs configuration
+✓ Enhanced deployment verification steps
+
+The deploy.sh script now handles 95%+ of configuration automatically!
+
 TABLE OF CONTENTS
 -----------------
 1. Prerequisites
@@ -111,19 +124,27 @@ sudo ./deploy.sh yourdomain.com
 sudo ./deploy.sh localhost
 
 The script will:
-- Install all system dependencies
+- Install all system dependencies (Python 3.11, Node.js, nginx, certbot)
 - Create application user and directories
 - Set up Python virtual environment
-- Build frontend
-- Configure Nginx
-- Install systemd services
+- Build frontend with production settings
+- Configure Nginx with rate limiting
+- Install systemd services with production paths
+- Automatically configure CORS for your domain
 - Optionally set up SSL with Let's Encrypt
-- Configure firewall and log rotation
+- Configure firewall (UFW) and log rotation
+
+What the script does automatically (NEW):
+- Sets production data paths in systemd services
+- Configures CORS origins in .env based on your domain
+- Sets up frontend to use relative URLs for API calls
+- Creates all necessary directories with correct permissions
 
 Step 3: Follow Post-Deployment Steps
 ------------------------------------
-After the script completes, continue to Section 5 for configuration
-and Section 6 for initial data setup.
+After the script completes, continue to Section 6 for initial data setup.
+Section 5 (configuration) is now mostly automated - only review if you
+need custom settings.
 
 
 ================================================================================
@@ -250,49 +271,94 @@ sudo ufw enable
 5. POST-DEPLOYMENT CONFIGURATION
 ================================================================================
 
-Step 1: Configure Environment Variables
----------------------------------------
-cd /opt/marxist-search/backend
-sudo -u marxist cp /tmp/marxist-search/.env.production.example .env
-sudo -u marxist nano .env
+NOTE: As of the latest version, most configuration is now AUTOMATIC when using
+the deploy.sh script. This section is for reference and advanced customization.
 
-Update the following in .env:
-- ENVIRONMENT=production
-- DEBUG=false
-- LOG_LEVEL=INFO
-
-Step 2: Update Frontend API Endpoint (if needed)
-------------------------------------------------
-If your domain differs from localhost:
-
-cd /opt/marxist-search/frontend
-sudo -u marxist nano .env.production
-
-Add:
-REACT_APP_API_URL=https://yourdomain.com/api
-
-# Rebuild frontend
-sudo -u marxist npm run build
-
-Step 3: Configure CORS in Backend
----------------------------------
-Edit /opt/marxist-search/backend/src/api/main.py
-
-Update allow_origins list to include your production domain:
-allow_origins=[
-    "https://yourdomain.com",
-    "https://www.yourdomain.com",
-]
-
-Step 4: Update Production Paths (if needed)
+Automatic Configuration (done by deploy.sh)
 -------------------------------------------
-By default, the application uses:
-- Database: /var/lib/marxist-search/articles.db
-- Index: /var/lib/marxist-search/txtai
-- Logs: /var/log/news-search/
+The deployment script now automatically configures:
 
-These are configured in backend/config/search_config.py
-Modify if you need different paths.
+1. CORS Origins - Set in .env based on your domain:
+   ALLOWED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com,...
+
+2. Data Paths - Set via environment variables in systemd services:
+   - DATA_DIR=/var/lib/marxist-search
+   - DATABASE_PATH=/var/lib/marxist-search/articles.db
+   - INDEX_PATH=/var/lib/marxist-search/txtai
+   - CACHE_PATH=/var/lib/marxist-search/cache
+
+3. Frontend API URLs - Uses relative URLs (/api/v1) in production,
+   so it works regardless of your domain
+
+4. Production settings:
+   - ENVIRONMENT=production
+   - DEBUG=false
+   - LOG_LEVEL=INFO
+
+Verification Steps
+-----------------
+After deployment, verify configuration:
+
+# Check .env file has correct CORS origins
+cat /opt/marxist-search/backend/.env | grep ALLOWED_ORIGINS
+
+# Check systemd service has correct paths
+systemctl cat marxist-search-api.service | grep Environment
+
+# Verify frontend build settings
+ls -la /opt/marxist-search/frontend/build/
+
+Manual Configuration (Optional)
+-------------------------------
+Only needed if you want to customize beyond the defaults:
+
+Step 1: Custom CORS Origins
+---------------------------
+Edit /opt/marxist-search/backend/.env
+
+Add additional domains to ALLOWED_ORIGINS:
+ALLOWED_ORIGINS=https://yourdomain.com,https://api.yourdomain.com
+
+Restart API:
+sudo systemctl restart marxist-search-api
+
+Step 2: Custom Data Paths
+-------------------------
+If you need different paths than /var/lib/marxist-search:
+
+Edit systemd service files:
+sudo nano /etc/systemd/system/marxist-search-api.service
+
+Update Environment variables:
+Environment="DATABASE_PATH=/custom/path/articles.db"
+Environment="INDEX_PATH=/custom/path/txtai"
+
+Reload and restart:
+sudo systemctl daemon-reload
+sudo systemctl restart marxist-search-api
+
+Step 3: Performance Tuning
+--------------------------
+Edit /opt/marxist-search/backend/.env
+
+Uncomment and adjust:
+SEARCH_THREAD_POOL_SIZE=4
+MAX_CONCURRENT_SEARCHES=10
+
+Higher values = better performance but more memory usage.
+
+Step 4: Custom Log Levels
+-------------------------
+For debugging, you can increase logging:
+
+Edit .env:
+LOG_LEVEL=DEBUG
+
+Restart:
+sudo systemctl restart marxist-search-api
+
+NOTE: DEBUG mode exposes API docs at /docs endpoint.
+Only use for troubleshooting, not in production.
 
 
 ================================================================================
@@ -564,6 +630,51 @@ Solutions:
 3. Enable auto-renewal:
    sudo systemctl enable certbot.timer
    sudo systemctl start certbot.timer
+
+CORS Errors in Browser
+----------------------
+Problem: Frontend shows CORS errors in browser console
+
+Solutions:
+1. Verify .env has correct domain:
+   cat /opt/marxist-search/backend/.env | grep ALLOWED_ORIGINS
+
+   Should show:
+   ALLOWED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com,...
+
+2. If missing or incorrect, edit .env:
+   sudo -u marxist nano /opt/marxist-search/backend/.env
+
+   Add/update:
+   ALLOWED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
+
+3. Restart API:
+   sudo systemctl restart marxist-search-api
+
+4. Clear browser cache and try again
+
+5. Check nginx is properly proxying:
+   curl -I http://localhost:8000/api/v1/health
+
+Frontend Shows 404 for API Calls
+--------------------------------
+Problem: Browser shows 404 errors when calling API
+
+Solutions:
+1. Verify nginx is running:
+   sudo systemctl status nginx
+
+2. Check nginx config is correct:
+   sudo nginx -t
+
+3. Verify frontend build exists:
+   ls -la /opt/marxist-search/frontend/build/
+
+4. Check API is accessible:
+   curl http://localhost:8000/api/v1/health
+
+5. Review nginx logs:
+   sudo tail -f /var/log/nginx/marxist-search-error.log
 
 Updates Not Running
 ------------------
@@ -851,5 +962,21 @@ GitHub Repository:
 END OF DEPLOYMENT GUIDE
 ================================================================================
 
-Last Updated: 2025-11-20
-Version: 1.0
+Last Updated: 2025-11-21
+Version: 1.1
+
+CHANGELOG
+---------
+v1.1 (2025-11-21):
+- Added automatic CORS configuration in deploy.sh
+- Added environment variable support for production paths
+- Updated frontend to use relative URLs in production
+- Enhanced troubleshooting section with CORS and frontend issues
+- Updated post-deployment configuration section
+- Clarified automatic vs manual configuration
+
+v1.0 (2025-11-20):
+- Initial comprehensive deployment guide
+- Automated deployment script
+- Manual deployment instructions
+- Troubleshooting and maintenance sections
