@@ -12,6 +12,7 @@ import logging
 from .chunking import ArticleChunker
 from .txtai_manager import TxtaiManager
 from ..ingestion.database import Database
+from config.search_config import TITLE_WEIGHT_MULTIPLIER
 
 logger = logging.getLogger("indexing")
 
@@ -459,17 +460,28 @@ class IndexingService:
         """
         Prepare article for indexing.
 
+        For non-chunked articles, prepend title N times to weight title matching
+        in semantic search. This ensures articles with matching titles rank higher.
+
         Args:
             article: Article dictionary
 
         Returns:
             Document dictionary for txtai
         """
+        # Prepend title N times to content for semantic weighting
+        title = article['title']
+        content = article['content']
+
+        # Weight title by repeating it before content
+        title_prefix = (title + ". ") * TITLE_WEIGHT_MULTIPLIER
+        weighted_content = title_prefix + content
+
         return {
             'id': article['id'],
             'article_id': article['id'],
-            'title': article['title'],
-            'content': article['content'],
+            'title': title,
+            'content': weighted_content,  # Content with title prefix
             'url': article['url'],
             'source': article['source'],
             'author': article.get('author', ''),
@@ -492,6 +504,10 @@ class IndexingService:
         """
         Prepare chunk for indexing.
 
+        Only the FIRST chunk (chunk_index=0) gets title weighting.
+        This ensures title matching works without causing duplicate
+        results from all chunks of the same article.
+
         Args:
             chunk: Chunk dictionary
             article: Parent article dictionary
@@ -500,11 +516,23 @@ class IndexingService:
         Returns:
             Document dictionary for txtai
         """
+        title = article['title']
+        content = chunk['content']
+        chunk_index = chunk['chunk_index']
+
+        # Only prepend title to FIRST chunk for title weighting
+        # Other chunks get pure semantic embeddings without title boost
+        if chunk_index == 0:
+            title_prefix = (title + ". ") * TITLE_WEIGHT_MULTIPLIER
+            weighted_content = title_prefix + content
+        else:
+            weighted_content = content
+
         return {
             'id': chunk_id,
             'article_id': article['id'],
-            'title': article['title'],
-            'content': chunk['content'],
+            'title': title,
+            'content': weighted_content,  # Title prefix only on first chunk
             'url': article['url'],
             'source': article['source'],
             'author': article.get('author', ''),
@@ -513,7 +541,7 @@ class IndexingService:
             'published_month': article.get('published_month', 0),
             'word_count': chunk.get('word_count', 0),
             'is_chunk': True,
-            'chunk_index': chunk['chunk_index'],
+            'chunk_index': chunk_index,
             'tags': article.get('tags', []),
             'terms': article.get('terms', [])
         }
