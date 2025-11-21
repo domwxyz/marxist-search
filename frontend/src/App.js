@@ -54,12 +54,21 @@ function App() {
       {/* Header */}
       <header className="bg-marxist-red shadow-md">
         <div className="max-w-7xl mx-auto px-4 py-6">
-          <h1 className="text-3xl font-bold text-white">
-            Marxist Article Search
-          </h1>
-          <p className="text-red-100 mt-1">
-            Search publications from across the Revolutionary Communist International
-          </p>
+          <div className="flex items-center gap-4">
+            <img
+              src="/logo.png"
+              alt="Marxist Search Logo"
+              className="h-16 w-16 object-contain bg-white p-2 rounded-lg shadow-sm"
+            />
+            <div>
+              <h1 className="text-3xl font-bold text-white">
+                Marxist Article Search
+              </h1>
+              <p className="text-red-100 mt-1">
+                Search publications from across the Revolutionary Communist International
+              </p>
+            </div>
+          </div>
         </div>
       </header>
 
