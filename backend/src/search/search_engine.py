@@ -136,14 +136,16 @@ class SearchEngine:
         # Build WHERE clause from filters
         where_clause = SearchFilters.build_where_clause(filters)
 
-        # Execute txtai search to get ALL results for proper total count
+        # Execute txtai search to get results for proper total count
         # We need to fetch enough results to ensure we get all matches after deduplication
-        # Using a large limit (10000) to capture all realistic search results
+        # Using 2000 as the limit - large enough for most searches while avoiding
+        # SQLite "recursive cursor" errors that occur with very large result sets (10000+)
+        # when txtai performs batch operations during search
         try:
             raw_results = self._execute_txtai_search(
                 query=query,
                 where=where_clause,
-                limit=10000  # Large limit to get all/most results
+                limit=2000  # Balanced limit to avoid cursor recursion errors
             )
 
             logger.debug(f"txtai returned {len(raw_results)} raw results")
