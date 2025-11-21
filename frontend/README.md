@@ -1,118 +1,436 @@
-# Marxist Article Search - Frontend
+# Marxist Search - Frontend
 
-React frontend for searching across 16,000+ Marxist articles from revolutionary communist publications.
+React frontend for the Marxist Search semantic search engine. Provides a modern, responsive interface for searching across 16,000+ Marxist articles.
 
-## Tech Stack
+## Technology Stack
 
-- **React 18** - UI framework
-- **Create React App** - Build tool and development server
+- **React 19** - UI framework
+- **Create React App** - Build toolchain and development server
 - **TailwindCSS 3** - Utility-first CSS framework
 - **Fetch API** - HTTP client (native browser API)
 
-## Getting Started
+## Features
+
+- **Semantic Search**: Natural language search with 300ms debouncing
+- **Request Cancellation**: Automatic cancellation of stale requests when new search initiated
+- **Advanced Filters**: Filter by source, author, and date range
+- **Date Range Presets**: Quick filters (past week, month, year, decade) plus custom date picker
+- **Pagination**: Navigate results with page controls
+- **Results Per Page**: Configurable page size (10, 25, 50, 100)
+- **Statistics Dashboard**: Real-time index statistics
+- **Responsive Design**: Mobile-friendly interface with Tailwind CSS
+- **Error Handling**: User-friendly error messages
+- **Loading States**: Visual feedback during searches
+
+## Project Structure
+
+```
+frontend/
+├── public/
+│   ├── index.html              # HTML template
+│   ├── favicon.ico             # Favicon
+│   ├── logo192.png             # App logo (192x192)
+│   ├── logo512.png             # App logo (512x512)
+│   └── manifest.json           # PWA manifest
+├── src/
+│   ├── components/             # React components
+│   │   ├── SearchBar.jsx          # Search input with submit button
+│   │   ├── FilterPanel.jsx        # Source, author, date filters
+│   │   ├── ResultsList.jsx        # Results container
+│   │   ├── ResultCard.jsx         # Individual result card
+│   │   ├── Pagination.jsx         # Pagination controls
+│   │   ├── ResultsPerPageSelector.jsx  # Page size dropdown
+│   │   └── StatsDisplay.jsx       # Index statistics
+│   ├── hooks/                  # Custom React hooks
+│   │   ├── useSearch.js           # Search state and logic
+│   │   └── useFilters.js          # Filter state management
+│   ├── utils/                  # Utilities
+│   │   └── api.js                 # API client functions
+│   ├── App.js                  # Main app component
+│   ├── App.css                 # App styles
+│   ├── index.js                # Entry point
+│   └── index.css               # Global styles (Tailwind imports)
+├── .env.example                # Environment variables template
+├── package.json
+└── README.md
+```
+
+## Installation
 
 ### Prerequisites
 
 - Node.js 14+ and npm
-- Backend API running on `http://localhost:8000` (or configure via `.env`)
+- Backend API running (default: `http://localhost:8000`)
 
-### Installation
+### Setup
 
 ```bash
+cd frontend
 npm install
 ```
 
 ### Configuration
 
-Copy `.env.example` to `.env` and configure:
+Copy `.env.example` to `.env`:
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` to configure API URL:
 
 ```env
 REACT_APP_API_URL=http://localhost:8000/api/v1
 ```
 
-### Development
+## Development
+
+### Start Development Server
 
 ```bash
-# Start development server (with hot reload)
 npm start
 ```
 
-Opens at `http://localhost:3000`
+Opens at `http://localhost:3000` with hot reload enabled.
 
-### Production
+### Other Commands
 
 ```bash
+# Run tests
+npm test
+
 # Build for production
 npm run build
 
-# Preview production build (requires serve)
+# Eject from Create React App (irreversible)
+npm run eject
+```
+
+## Production Build
+
+### Build
+
+```bash
+npm run build
+```
+
+Creates optimized production build in `build/` directory with:
+- Minified JavaScript and CSS
+- Hashed filenames for cache busting
+- Optimized bundle sizes
+- Source maps for debugging
+
+### Preview Production Build
+
+```bash
+# Install serve (if not already installed)
+npm install -g serve
+
+# Serve production build
 npx serve -s build
 ```
 
-## Project Structure
+Opens at `http://localhost:3000` (or next available port).
 
+## Component Overview
+
+### App.js
+Main application component that:
+- Orchestrates search and filter state
+- Manages API calls via `useSearch` hook
+- Handles pagination
+- Renders all child components
+
+### SearchBar.jsx
+Search input with:
+- Controlled input field
+- Submit button
+- Enter key support
+- Debouncing (300ms)
+
+### FilterPanel.jsx
+Advanced filters with:
+- **Source filter**: Dropdown populated from API
+- **Author filter**: Dropdown with top authors from API
+- **Date range filter**: Preset options (past week, month, year, decade) plus custom date picker
+- Clear filters button
+
+### ResultsList.jsx
+Results display with:
+- Loading state indicator
+- Error message display
+- Empty state handling
+- Grid of result cards
+
+### ResultCard.jsx
+Individual result card showing:
+- Article title (clickable link)
+- Excerpt from content
+- Source and author
+- Published date
+- Tags (if available)
+- Relevance score
+
+### Pagination.jsx
+Pagination controls with:
+- Previous/Next buttons
+- Page number display
+- Disabled states for boundary pages
+
+### ResultsPerPageSelector.jsx
+Dropdown for results per page:
+- Options: 10, 25, 50, 100
+- Resets to page 1 on change
+
+### StatsDisplay.jsx
+Statistics dashboard showing:
+- Total articles indexed
+- Number of sources
+- Date range (earliest to latest article)
+- Fetched from `/api/v1/stats` endpoint
+
+## Custom Hooks
+
+### useSearch.js
+Manages search state and API calls:
+- Debounced search execution (300ms)
+- Request cancellation with AbortController
+- Loading and error states
+- Results and pagination state
+- Filter application
+
+### useFilters.js
+Manages filter state:
+- Source, author, date range filters
+- Custom date range (start/end dates)
+- Clear all filters function
+- Filter state persistence
+
+## API Integration
+
+The frontend communicates with the backend via `utils/api.js`:
+
+### API Functions
+
+```javascript
+// Search articles
+search(query, filters)
+
+// Get top authors
+getTopAuthors()
+
+// Get all sources
+getSources()
+
+// Get index statistics
+getStats()
+
+// Health check
+healthCheck()
 ```
-src/
-├── components/          # React components
-│   ├── SearchBar.jsx       # Main search input
-│   ├── FilterPanel.jsx     # Source/author/date filters
-│   ├── ResultCard.jsx      # Individual result display
-│   ├── ResultsList.jsx     # Results container
-│   ├── Pagination.jsx      # Pagination controls
-│   └── StatsDisplay.jsx    # Index statistics
-├── hooks/              # Custom React hooks
-│   ├── useSearch.js        # Search state management
-│   └── useFilters.js       # Filter state management
-├── utils/              # Utility functions
-│   └── api.js              # API client
-├── App.js              # Main app component
-└── index.js            # Entry point
+
+### API Client Configuration
+
+```javascript
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1';
 ```
 
-## Features
+## Styling
 
-- **Semantic Search** - Natural language search with debouncing (300ms)
-- **Advanced Filters** - Source, author, and date range filtering
-- **Pagination** - Navigate results with configurable page size (10/25/50/100)
-- **Responsive Design** - Mobile-friendly interface
-- **Real-time Stats** - Index statistics display
-- **Error Handling** - Graceful error messages
+### TailwindCSS
 
-## API Endpoints
+The project uses Tailwind CSS utility classes for styling:
 
-- `POST /api/v1/search` - Search articles
-- `GET /api/v1/top-authors` - Get top authors
-- `GET /api/v1/sources` - Get sources
-- `GET /api/v1/stats` - Get statistics
+```javascript
+// Example from ResultCard.jsx
+<div className="bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow">
+  <h3 className="text-xl font-semibold text-gray-900 mb-2">
+    {title}
+  </h3>
+</div>
+```
+
+### Custom Styles
+
+Custom styles are defined in:
+- `src/App.css` - Component-specific styles
+- `src/index.css` - Global styles and Tailwind imports
 
 ## Deployment
 
-The production build (`build/` folder) can be deployed to:
+The production build can be deployed to:
 
-- Static hosting (Netlify, Vercel, GitHub Pages)
-- S3 + CloudFront
-- Nginx (see deployment docs)
+### Static Hosting
 
-## Troubleshooting
+- **Netlify**: Drag-and-drop `build/` folder or connect Git repo
+- **Vercel**: Connect Git repo with automatic deployments
+- **GitHub Pages**: Use `gh-pages` package
+- **AWS S3 + CloudFront**: Upload `build/` folder
 
-**API Connection Issues:**
-- Verify backend is running
-- Check CORS settings
-- Confirm `.env` has correct API URL
+### Nginx
 
-**Build Errors:**
-```bash
-rm -rf node_modules package-lock.json
-npm install
+Serve `build/` folder with Nginx configuration:
+
+```nginx
+server {
+    listen 80;
+    server_name yourdomain.com;
+    root /path/to/build;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /api {
+        proxy_pass http://localhost:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+
+### Docker
+
+```dockerfile
+FROM node:18 AS build
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM nginx:alpine
+COPY --from=build /app/build /usr/share/nginx/html
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
+```
+
+## Environment Variables
+
+### .env
+
+```env
+# Backend API URL
+REACT_APP_API_URL=http://localhost:8000/api/v1
+
+# Optional: Enable debug mode
+REACT_APP_DEBUG=false
+```
+
+### Production .env
+
+```env
+# Production API URL
+REACT_APP_API_URL=https://api.yourdomain.com/api/v1
 ```
 
 ## Browser Support
 
-- Chrome/Edge (latest)
-- Firefox (latest)
-- Safari (latest)
-- Mobile browsers
+Supports modern browsers:
 
----
+- **Chrome/Edge**: Latest 2 versions
+- **Firefox**: Latest 2 versions
+- **Safari**: Latest 2 versions
+- **Mobile browsers**: iOS Safari, Chrome Mobile
 
-Built with Create React App. See [CRA docs](https://create-react-app.dev/) for more details.
+## Troubleshooting
+
+### API Connection Issues
+
+**Problem**: Frontend can't connect to backend
+
+**Solutions**:
+1. Verify backend is running at `http://localhost:8000`
+2. Check `.env` has correct `REACT_APP_API_URL`
+3. Verify CORS is enabled in backend (`src/api/main.py`)
+4. Check browser console for network errors
+
+### CORS Errors
+
+**Problem**: `Access-Control-Allow-Origin` errors in console
+
+**Solution**: Ensure backend has CORS middleware configured:
+
+```python
+# backend/src/api/main.py
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+### Build Errors
+
+**Problem**: `npm run build` fails
+
+**Solutions**:
+```bash
+# Clear cache and reinstall
+rm -rf node_modules package-lock.json
+npm install
+
+# Clear Create React App cache
+rm -rf node_modules/.cache
+npm run build
+```
+
+### Environment Variables Not Working
+
+**Problem**: `process.env.REACT_APP_API_URL` is undefined
+
+**Solutions**:
+1. Ensure variable starts with `REACT_APP_`
+2. Restart development server after changing `.env`
+3. Check `.env` file is in `frontend/` directory (not `frontend/src/`)
+
+### Slow Search Performance
+
+**Problem**: Search feels laggy or unresponsive
+
+**Solutions**:
+1. Check debounce timeout in `useSearch.js` (default 300ms)
+2. Verify backend is responding quickly
+3. Check browser network tab for slow API calls
+
+## Development Tips
+
+### Hot Reload
+
+Changes to source files automatically reload the browser. If hot reload stops working:
+
+```bash
+# Restart development server
+Ctrl+C
+npm start
+```
+
+### Debugging
+
+Use React Developer Tools browser extension:
+- Inspect component state and props
+- Profile component renders
+- Debug hooks
+
+### State Management
+
+The app uses React hooks for state management:
+- `useState` for local state
+- `useEffect` for side effects
+- `useCallback` for memoized callbacks
+- Custom hooks (`useSearch`, `useFilters`) for shared logic
+
+## License
+
+See LICENSE file in repository root.
+
+## Learn More
+
+- [Create React App Documentation](https://create-react-app.dev/)
+- [React Documentation](https://react.dev/)
+- [TailwindCSS Documentation](https://tailwindcss.com/docs)

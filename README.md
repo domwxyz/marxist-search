@@ -1,116 +1,45 @@
 # Marxist Search Engine
 
-A RAG-based semantic search engine for Marxist theoretical and analytical articles from the Revolutionary Communist International (RCI) and related organizations.
+A semantic search engine for Marxist theoretical and analytical articles from the Revolutionary Communist International (RCI) and related organizations. Enables natural language search across a 25-year corpus of ~16,000 articles using vector embeddings and hybrid search.
 
-## Overview
+## Features
 
-This project implements a lightweight, cost-effective search engine for a 25-year corpus of Marxist articles (~16,000 articles). The system enables users to search across news content and retrieve relevant articles using semantic search powered by vector embeddings.
+- **Semantic Search**: Natural language queries using BAAI/bge-small-en-v1.5 embeddings with hybrid BM25 keyword search
+- **RSS Archiving**: Automated fetching from multiple RSS feeds with CMS-specific pagination (WordPress, Joomla)
+- **Content Extraction**: Full-text extraction from RSS feeds and web pages using trafilatura
+- **Special Term Extraction**: Automatic extraction of 150+ Marxist terms across 6 categories (people, organizations, concepts, geographic, historical events, movements)
+- **Query Expansion**: Synonym support with 19 synonym groups and alias resolution (e.g., "USSR" → "Soviet Union")
+- **Advanced Filtering**: Search by date range, source, and author
+- **Search Analytics**: Track search queries, term usage, and result patterns
+- **Incremental Updates**: Automated RSS polling and index updates every 30 minutes via systemd timer
+- **Modern UI**: React frontend with responsive design and TailwindCSS
+- **Production Ready**: Complete deployment automation with systemd, nginx, and SSL support
 
-### Key Features
-
-- **Semantic Search**: Natural language queries using BAAI/bge-small-en-v1.5 embeddings
-- **RSS Archiving**: Automated fetching from multiple RSS feeds with pagination support
-- **Content Extraction**: Intelligent full-text extraction using feedparser and trafilatura
-- **Text Normalization**: Clean and prepare content for accurate indexing
-- **Special Term Extraction**: Automatic extraction of Marxist terminology, people, organizations, and concepts
-- **Analytics Tracking**: Search analytics and term usage tracking
-- **Incremental Updates**: Automated RSS polling and index updates (every 30 minutes)
-- **Cost Efficient**: No LLM hosting costs, runs on single DigitalOcean droplet
-- **Fast**: Sub-second query response times with concurrent user support
-
-### Technology Stack
+## Technology Stack
 
 **Backend**:
-- Python 3.11+
-- FastAPI (API server)
-- txtai (vector search)
-- SQLite (metadata storage)
-- feedparser (RSS parsing)
-- trafilatura (web scraping)
-- BAAI/bge-small-en-v1.5 (embeddings)
+- Python 3.11+ with FastAPI
+- txtai (vector search) with BAAI/bge-small-en-v1.5 embeddings
+- SQLite (metadata and content storage)
+- feedparser (RSS parsing) + trafilatura (web scraping)
+- Click CLI with Rich formatting
 
 **Frontend**:
-- React 18+
-- Create React App
-- TailwindCSS 3
-- Fetch API
+- React 19 + TailwindCSS 3
+- Create React App build system
+- Responsive design
 
-## Project Status
-
-### ✅ Completed: Archiving Services
-
-The article archiving system is fully implemented and functional:
-
-- **RSS Feed Fetcher**: Concurrent fetching with WordPress/Joomla pagination support
-- **Content Extractor**: Intelligent full-text extraction from RSS or web
-- **Text Normalizer**: Comprehensive text cleaning and normalization
-- **Database Schema**: Complete SQLite schema with proper indexing
-- **Article Storage**: Batch saving with duplicate detection
-- **Archiving Orchestrator**: End-to-end pipeline from RSS to database
-
-### ✅ Completed: Embedding & Indexing Services
-
-The embedding and indexing system is fully implemented:
-
-- **Article Chunking**: Intelligent chunking of long articles (>3,500 words) with paragraph-boundary preservation
-- **txtai Manager**: Complete txtai integration with BAAI/bge-small-en-v1.5 embeddings
-- **Hybrid Search**: Semantic + BM25 keyword search support
-- **Indexing Service**: End-to-end pipeline from database to searchable index
-- **General Purpose CLI**: Comprehensive command-line interface for all operations
-
-### ✅ Completed: Search Engine & API
-
-The search functionality is fully implemented:
-
-- **Search Engine Service**: Core search with filtering, deduplication, and recency boosting
-- **Filter System**: Support for date ranges, source, author, and custom filters
-- **Smart Deduplication**: Groups article chunks and returns highest-scoring matches
-- **FastAPI REST API**: Complete REST API with all endpoints
-- **CLI Search Command**: Test search functionality from command line
-- **Thread-Safe Operations**: Concurrent search handling with thread pool
-
-### ✅ Completed: Frontend
-
-The React frontend is fully implemented:
-
-- **Search Interface**: Clean, responsive search bar with debounced input
-- **Advanced Filters**: Source, author, and date range filtering
-- **Results Display**: Formatted article cards with metadata
-- **Pagination**: Configurable page size (10/25/50/100) with navigation
-- **Statistics Dashboard**: Real-time index statistics
-- **Error Handling**: User-friendly error messages
-- **API Integration**: Full integration with FastAPI backend
-
-### ✅ Completed: Phase 2 Advanced Features
-
-All Phase 2 features are now complete:
-
-- **Special Term Extraction**: Automatic extraction and tracking of Marxist terminology
-  - 100+ curated terms across 6 categories (people, organizations, concepts, geographic, historical events, movements)
-  - Synonym support for query expansion (17 synonym groups)
-  - Alias resolution (e.g., "UN" → "United Nations")
-  - Term occurrence tracking in `term_mentions` table
-- **Analytics Tracking**: Comprehensive search analytics
-  - Most searched terms by category
-  - Author search popularity
-  - Search volume tracking by date
-  - Tag distribution in results
-  - Synonym matching statistics
-- **Incremental Updates**: Fully automated update system
-  - Archive updates with smart duplicate detection
-  - Index updates with `upsert` for new articles
-  - Ready for systemd timer automation (every 30 minutes)
-
-### 📋 TODO: Deployment
-
-- **Production Deployment**: Production deployment scripts and configuration
+**Deployment**:
+- Systemd services (API + automated updates)
+- Nginx reverse proxy
+- Let's Encrypt SSL
 
 ## Quick Start
 
 ### Prerequisites
 
 - Python 3.11 or higher
-- pip
+- Node.js 14+ and npm
 - Virtual environment (recommended)
 
 ### Installation
@@ -125,155 +54,113 @@ All Phase 2 features are now complete:
    ```bash
    cd backend
    python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   source venv/bin/activate  # Windows: venv\Scripts\activate
    pip install -r requirements.txt
    ```
 
-3. **Set up frontend**:
+3. **Initialize database**:
    ```bash
-   cd frontend
+   python -m src.cli.marxist_cli init-db
+   ```
+
+4. **Archive articles from RSS feeds**:
+   ```bash
+   # Archive all configured feeds (~16,000 articles, may take 30-60 minutes)
+   python -m src.cli.marxist_cli archive run
+   ```
+
+5. **Build search index**:
+   ```bash
+   # Generate embeddings and build txtai index
+   python -m src.cli.marxist_cli index build
+   ```
+
+6. **Set up frontend**:
+   ```bash
+   cd ../frontend
    npm install
    cp .env.example .env
    # Edit .env to configure API URL if needed
    ```
 
-4. **Initialize database**:
-   ```bash
-   cd backend
-   python -m src.cli.archive_cli init-db
-   ```
+### Running the Application
 
-### Usage
-
-The Marxist Search CLI provides commands for archiving and indexing:
-
-#### Archive Articles from RSS Feeds
-
-```bash
-# Initialize database
-python -m src.cli.marxist_cli init-db
-
-# Archive all configured feeds
-python -m src.cli.marxist_cli archive run
-
-# Archive a specific feed
-python -m src.cli.marxist_cli archive run --feed-url "https://www.marxist.com/rss.xml"
-
-# List configured feeds
-python -m src.cli.marxist_cli archive list
-```
-
-#### Build Search Index
-
-```bash
-# Build txtai vector index from archived articles
-python -m src.cli.marxist_cli index build
-
-# View index information
-python -m src.cli.marxist_cli index info
-
-# View comprehensive statistics
-python -m src.cli.marxist_cli stats
-```
-
-#### Incremental Updates
-
-```bash
-# Update archive with new articles (stops after 5 consecutive duplicates)
-python -m src.cli.marxist_cli archive update
-
-# Update index with new articles
-python -m src.cli.marxist_cli index update
-
-# Run both archive and index update together (recommended)
-python -m src.scripts.incremental_update
-```
-
-#### Search Articles
-
-```bash
-# Basic search
-python -m src.cli.marxist_cli search "climate change"
-
-# Search with filters
-python -m src.cli.marxist_cli search "revolution" --source "In Defence of Marxism"
-python -m src.cli.marxist_cli search "capitalism" --date-range past_year --limit 20
-python -m src.cli.marxist_cli search "imperialism" --author "Alan Woods"
-
-# Custom date range
-python -m src.cli.marxist_cli search "palestine" --start-date 2023-01-01 --end-date 2024-12-31
-```
-
-#### Run the Application
-
-**Backend (FastAPI Server)**:
+**Backend (Terminal 1)**:
 ```bash
 cd backend
-# Development server
+source venv/bin/activate
 python -m src.api.main
-
-# Or use uvicorn directly
-uvicorn src.api.main:app --reload --host 0.0.0.0 --port 8000
-
-# Access API documentation at http://localhost:8000/docs
+# API available at http://localhost:8000
+# API docs at http://localhost:8000/docs
 ```
 
-**Frontend (React App)**:
+**Frontend (Terminal 2)**:
 ```bash
 cd frontend
-# Development server (hot reload)
 npm start
 # Opens at http://localhost:3000
-
-# Production build
-npm run build
-# Creates optimized build in build/ folder
 ```
 
-**API Endpoints**:
-- `POST /api/v1/search` - Search articles with filters
-- `GET /api/v1/top-authors` - Get top authors by article count
-- `GET /api/v1/sources` - List all article sources
-- `GET /api/v1/stats` - Get index statistics
-- `GET /api/v1/health` - Health check endpoint
+### CLI Commands
 
-**Complete Workflow**:
-1. Initialize database: `python -m src.cli.marxist_cli init-db`
-2. Archive articles: `python -m src.cli.marxist_cli archive run`
-3. Build index: `python -m src.cli.marxist_cli index build`
-4. Start backend: `python -m src.api.main`
-5. Start frontend: `npm start` (in frontend directory)
-6. Open http://localhost:3000 in browser
+```bash
+# Database initialization
+python -m src.cli.marxist_cli init-db
+
+# Archiving
+python -m src.cli.marxist_cli archive run              # Archive all feeds
+python -m src.cli.marxist_cli archive update           # Incremental update
+python -m src.cli.marxist_cli archive list             # List configured feeds
+
+# Indexing
+python -m src.cli.marxist_cli index build              # Build index
+python -m src.cli.marxist_cli index update             # Update index with new articles
+python -m src.cli.marxist_cli index info               # Index statistics
+
+# Search
+python -m src.cli.marxist_cli search "climate change"
+python -m src.cli.marxist_cli search "imperialism" --author "Alan Woods"
+python -m src.cli.marxist_cli search "palestine" --date-range past_year
+
+# Statistics
+python -m src.cli.marxist_cli stats                    # Comprehensive statistics
+```
 
 ## Project Structure
 
 ```
 marxist-search/
-├── backend/                    # Backend services
+├── backend/                    # Python backend
 │   ├── src/
-│   │   ├── ingestion/         # RSS fetching and archiving
-│   │   ├── indexing/          # Embedding and indexing
-│   │   ├── search/            # Search functionality
-│   │   ├── api/               # FastAPI endpoints
-│   │   └── cli/               # Command-line tools
-│   ├── config/                # Configuration files
-│   │   ├── rss_feeds.json     # RSS feed configuration
+│   │   ├── ingestion/         # RSS fetching, content extraction, term extraction
+│   │   ├── indexing/          # Embedding generation, chunking, txtai management
+│   │   ├── search/            # Search engine, filters, analytics
+│   │   ├── api/               # FastAPI application and routes
+│   │   ├── cli/               # Command-line interface
+│   │   └── scripts/           # Automation scripts (incremental updates)
+│   ├── config/
+│   │   ├── rss_feeds.json     # RSS feed configuration (3 sources)
+│   │   ├── terms_config.json  # Special terms, synonyms, aliases
 │   │   └── search_config.py   # Application settings
 │   ├── data/                  # Data directory (gitignored)
-│   ├── requirements.txt
-│   └── README.md
+│   │   ├── articles.db        # SQLite database
+│   │   └── txtai/             # Vector index
+│   └── requirements.txt
 ├── frontend/                   # React frontend
 │   ├── src/
-│   │   ├── components/        # React components
-│   │   ├── hooks/             # Custom hooks
-│   │   ├── utils/             # API client
-│   │   ├── App.js             # Main app
-│   │   └── index.js           # Entry point
-│   ├── public/                # Static assets
-│   ├── package.json
-│   └── README.md
-├── marxist_search_design.txt  # Technical design document
-├── LICENSE
+│   │   ├── components/        # UI components (SearchBar, Filters, Results, etc.)
+│   │   ├── hooks/             # Custom React hooks (useSearch, useFilters)
+│   │   └── utils/             # API client
+│   ├── public/                # Static assets (logo, favicon)
+│   └── package.json
+├── deployment/                 # Deployment automation
+│   ├── deploy.sh              # Automated deployment script
+│   ├── systemd/               # Systemd service files
+│   │   ├── marxist-search-api.service
+│   │   ├── marxist-search-update.service
+│   │   └── marxist-search-update.timer
+│   ├── scripts/               # Health check, backup
+│   └── nginx.conf             # Nginx configuration
 └── README.md
 ```
 
@@ -281,7 +168,7 @@ marxist-search/
 
 ### RSS Feeds
 
-Edit `backend/config/rss_feeds.json` to configure RSS feeds:
+Edit `backend/config/rss_feeds.json` to configure RSS sources:
 
 ```json
 {
@@ -299,13 +186,13 @@ Edit `backend/config/rss_feeds.json` to configure RSS feeds:
 ```
 
 **Pagination Types**:
-- `wordpress`: WordPress-style pagination
-- `joomla`: Joomla-style pagination
+- `wordpress`: WordPress-style (`?paged=N`)
+- `joomla`: Joomla-style (`?format=feed&limitstart=N`)
 - `standard`: No pagination
 
-### Special Terms Configuration
+### Special Terms
 
-Edit `backend/config/terms_config.json` to configure special term extraction:
+Edit `backend/config/terms_config.json` to configure term extraction:
 
 ```json
 {
@@ -314,227 +201,168 @@ Edit `backend/config/terms_config.json` to configure special term extraction:
     "bourgeoisie": ["capitalist class", "ruling class", "capitalists"]
   },
   "terms": {
-    "people": ["Karl Marx", "Friedrich Engels", "Vladimir Lenin", "Leon Trotsky"],
-    "organizations": ["IMT", "RCI", "NATO", "United Nations"],
-    "concepts": ["permanent revolution", "dialectical materialism"],
-    "geographic": ["Venezuela", "China", "Russia", "Cuba"],
-    "historical_events": ["Russian Revolution", "Spanish Civil War"],
-    "movements": ["labor movement", "climate movement"]
+    "people": ["Karl Marx", "Friedrich Engels", "Leon Trotsky"],
+    "organizations": ["IMT", "RCI", "NATO"],
+    "concepts": ["permanent revolution", "dialectical materialism"]
   },
   "aliases": {
     "UN": "United Nations",
-    "IMT": "International Marxist Tendency"
+    "USSR": "Soviet Union"
   }
 }
 ```
 
-The system automatically:
-- Extracts terms from article titles and content
-- Resolves aliases to canonical terms
-- Tracks term occurrences for analytics
-- Stores terms in searchable index for improved relevance
+The system automatically extracts terms from articles, resolves aliases, tracks occurrences, and uses them for query expansion.
 
-## Documentation
+### Search Configuration
 
-- **Technical Design**: See `marxist_search_design.txt` for complete system architecture
-- **Backend README**: See `backend/README.md` for detailed backend documentation
-- **Frontend README**: See `frontend/README.md` for frontend documentation
-- **API Documentation**: Available at `http://localhost:8000/docs` when backend is running
+Edit `backend/config/search_config.py` for advanced settings:
 
-## Development Roadmap
+- **Chunking**: Threshold (3500 words), chunk size (1000 words), overlap (200 words)
+- **Search Weights**: Semantic (70%), BM25 (30%)
+- **Title Weighting**: 5x repetition for semantic relevance
+- **Recency Boost**: Configurable decay factors
+- **txtai Backend**: numpy (CPU-only, exact search)
 
-### Phase 1: Archiving ✅ (Completed)
-- [x] RSS feed fetching with pagination
-- [x] Content extraction from RSS and web
-- [x] Text normalization and cleaning
-- [x] Database schema and storage
-- [x] CLI tools for testing
+## API Endpoints
 
-### Phase 2: Indexing ✅ (Completed)
-- [x] Article chunking for long documents
-- [x] Embedding generation with bge-small-en-v1.5
-- [x] txtai index creation and management
-- [x] General purpose CLI
-- [x] Incremental index updates
-- [x] Special term extraction
+- `POST /api/v1/search` - Search articles with filters
+- `GET /api/v1/top-authors` - Get top authors by article count
+- `GET /api/v1/sources` - List all article sources
+- `GET /api/v1/stats` - Database and index statistics
+- `GET /api/v1/health` - Health check endpoint
 
-### Phase 3: Search ✅ (Completed)
-- [x] Search engine implementation
-- [x] Filtering by date, source, author
-- [x] Result ranking and deduplication
-- [x] FastAPI endpoints
-- [x] CLI search command
-- [x] Thread-safe concurrent search
+Full API documentation available at `http://localhost:8000/docs` when backend is running.
 
-### Phase 4: Frontend ✅ (Completed)
-- [x] React application setup (Create React App + TailwindCSS)
-- [x] Search interface with debouncing
-- [x] Filter components (source, author, date)
-- [x] Results display with metadata
-- [x] Pagination with configurable page size
-- [x] Statistics dashboard
-- [x] API integration
-- [x] Error handling
+## Deployment
 
-### Phase 5: Deployment 📋 (In Progress)
-- [ ] Production configuration
-- [ ] Nginx setup
-- [x] Systemd timer for incremental updates (configuration ready)
-- [ ] Monitoring and logging
-- [ ] Backup strategy
+### Automated Deployment
+
+```bash
+cd deployment
+sudo ./deploy.sh yourdomain.com
+```
+
+The deployment script:
+- Installs system dependencies (Python 3.11, nginx, Node.js)
+- Creates application user and directory structure
+- Builds backend virtual environment
+- Builds frontend production bundle
+- Configures nginx reverse proxy
+- Sets up systemd services
+- Configures SSL with Let's Encrypt
+- Sets up firewall (UFW)
+- Configures log rotation
+
+### Systemd Services
+
+**API Service**: Runs FastAPI backend with uvicorn
+```bash
+sudo systemctl start marxist-search-api
+sudo systemctl enable marxist-search-api
+```
+
+**Automated Updates**: Runs incremental updates every 30 minutes
+```bash
+sudo systemctl start marxist-search-update.timer
+sudo systemctl enable marxist-search-update.timer
+```
+
+The update timer automatically:
+1. Fetches new articles from RSS feeds
+2. Extracts special terms
+3. Updates the txtai index
+4. Logs to `/var/log/news-search/ingestion.log`
 
 ## Architecture Highlights
 
+### Hybrid Search
+
+Combines semantic and keyword search for optimal results:
+- **Semantic (70%)**: Vector similarity using bge-small-en-v1.5 embeddings
+- **BM25 (30%)**: Traditional keyword matching
+- **Title Weighting**: Titles repeated 5x in embeddings for better relevance
+- **Query Expansion**: Synonyms and aliases automatically expand queries
+
+### Chunking Strategy
+
+Long articles (>3500 words) are automatically chunked:
+- Paragraph-boundary preservation for context
+- 1000-word chunks with 200-word overlap
+- Smart deduplication returns highest-scoring chunk per article
+
 ### Pagination Support
 
-The RSS fetcher intelligently handles different CMS types:
+RSS fetcher handles different CMS types:
+- **WordPress**: `?paged=N` pagination
+- **Joomla**: `?format=feed&limitstart=N` pagination
+- **Standard**: Checks for `<link rel="next">` tags
 
-- **WordPress**: Automatically paginates through `?paged=N` URLs
-- **Joomla**: Uses `?format=feed&limitstart=N` pagination
-- **Standard**: Checks for RSS `<link rel="next">` tags
+### Content Extraction
 
-### Content Extraction Strategy
+Intelligent full-text extraction:
+1. Check RSS feed for full content (>200 chars)
+2. Fallback to web scraping with trafilatura
+3. Extract metadata (title, author, date, tags)
+4. Normalize text before storage
 
-1. Check if RSS feed contains full content (>200 characters)
-2. If only summary available, fetch full text from URL using trafilatura
-3. Extract metadata (title, author, date, tags) from RSS
-4. Normalize all text before storage
+### Database Schema
 
-### Database Design
+- **articles**: Full content, metadata, extracted terms (16,000+ rows)
+- **article_chunks**: Chunks for long articles
+- **rss_feeds**: Feed status and health tracking
+- **author_stats**: Article counts and date ranges per author
+- **term_mentions**: Special term occurrences for analytics
 
-- **Articles**: Full content and metadata with extracted special terms
-- **Article Chunks**: Chunks for long articles (>3500 words)
-- **RSS Feeds**: Feed status and health tracking
-- **Author Stats**: Article counts and date ranges
-- **Term Mentions**: Special term occurrences for analytics tracking
+## Performance
 
-### Special Term Extraction
-
-The system automatically extracts and tracks Marxist terminology:
-
-- **100+ Curated Terms**: People, organizations, concepts, geographic locations, historical events, movements
-- **Synonym Support**: Query expansion with 17+ synonym groups (e.g., "proletariat" → "working class")
-- **Alias Resolution**: Abbreviations resolved to full terms (e.g., "UN" → "United Nations")
-- **Analytics Tracking**: Term occurrence tracking for search optimization
-- **Improved Search**: Terms indexed for better semantic relevance
-
-## Automated Updates with Systemd
-
-For production deployment, set up automated incremental updates using systemd timers:
-
-### Systemd Timer Configuration
-
-**File**: `/etc/systemd/system/marxist-search-update.timer`
-
-```ini
-[Unit]
-Description=Marxist Search Incremental Update Timer
-Requires=marxist-search-update.service
-
-[Timer]
-OnBootSec=5min
-OnUnitActiveSec=30min
-Unit=marxist-search-update.service
-
-[Install]
-WantedBy=timers.target
-```
-
-**File**: `/etc/systemd/system/marxist-search-update.service`
-
-```ini
-[Unit]
-Description=Marxist Search Incremental Update Service
-
-[Service]
-Type=oneshot
-User=newsearch
-Group=newsearch
-WorkingDirectory=/opt/marxist-search/backend
-Environment="PATH=/opt/marxist-search/venv/bin"
-ExecStart=/opt/marxist-search/venv/bin/python -m src.scripts.incremental_update
-StandardOutput=append:/var/log/news-search/ingestion.log
-StandardError=append:/var/log/news-search/errors.log
-```
-
-### Enable and Start
-
-```bash
-# Enable the timer to start on boot
-sudo systemctl enable marxist-search-update.timer
-
-# Start the timer immediately
-sudo systemctl start marxist-search-update.timer
-
-# Check timer status
-sudo systemctl status marxist-search-update.timer
-
-# View logs
-sudo journalctl -u marxist-search-update.service -f
-```
-
-The incremental update script will:
-1. Fetch new articles from RSS feeds (stops after 5 consecutive duplicates)
-2. Extract special terms from new articles
-3. Update the txtai index with new articles
-4. Log all operations to `/var/log/news-search/ingestion.log`
-
-## Performance Targets
-
-- **Single query latency**: <100ms (95th percentile)
-- **Concurrent users**: 10-20 simultaneous users
-- **Index size**: ~2GB in RAM
-- **Database size**: ~200MB (SQLite)
+- **Query Latency**: <200ms (95th percentile with numpy backend)
+- **Concurrent Users**: 10-20 simultaneous users
+- **Index Size**: ~2GB in RAM
+- **Database Size**: ~200MB (SQLite)
 - **Throughput**: 200-300 queries/minute
-- **Update frequency**: Every 30 minutes (configurable)
+- **Update Frequency**: Every 30 minutes (systemd timer)
 
 ## Troubleshooting
 
-### Error: 'IndexIVFFlat' object has no attribute 'nflip'
+### FAISS AttributeError: 'IndexIVFFlat' object has no attribute 'nflip'
 
-If you encounter this error when searching:
-
-```
-AttributeError: 'IndexIVFFlat' object has no attribute 'nflip'.
-```
-
-**Cause**: txtai's default backend (FAISS) has a compatibility issue where it tries to set the `nflip` parameter on `IndexIVFFlat`, which doesn't support this attribute. This occurs even without explicit FAISS configuration in newer versions of txtai/FAISS.
-
-**Solution**: Use the numpy backend (CPU-only, exact search) instead of FAISS:
+**Solution**: The project uses numpy backend to avoid FAISS compatibility issues:
 
 ```bash
-# Navigate to backend directory
 cd backend
-
-# Activate virtual environment
-# On Linux/Mac:
-source venv/bin/activate
-# On Windows:
-venv\Scripts\activate
-
-# Delete the old index (if it exists)
-# On Linux/Mac:
 rm -rf data/txtai
-# On Windows:
-rmdir /s /q data\txtai
-
-# Rebuild the index with numpy backend
 python -m src.cli.marxist_cli index build
 ```
 
-The configuration now uses `"backend": "numpy"` which provides CPU-only exact nearest neighbor search. Benefits:
-- **No additional dependencies** - numpy is already installed with your existing packages
-- **No FAISS issues** - completely avoids the nflip AttributeError
-- **More reliable** - exact search rather than approximate
-- **CPU-only** - no GPU complications
+The numpy backend provides CPU-only exact search without FAISS dependencies.
 
-For ~16,000 articles, numpy backend should provide acceptable performance (<200ms queries). If you need faster search in the future, you can switch to `"backend": "hnsw"` which requires installing hnswlib.
+### Database Locked Error
 
-### Other Common Issues
+**Cause**: SQLite doesn't support high concurrency
 
-- **Database locked error**: Make sure only one process is accessing the database at a time
-- **Out of memory during indexing**: Try indexing in smaller batches or increase system RAM
-- **Slow search performance**: Ensure the index is loaded into RAM and check `search_thread_pool_size` in config
+**Solution**: Ensure only one process accesses the database at a time. For production with high concurrency, consider PostgreSQL.
+
+### Slow Search Performance
+
+**Solutions**:
+- Ensure index is loaded into RAM
+- Check `search_thread_pool_size` in config
+- Consider switching to `hnsw` backend for faster approximate search (requires hnswlib)
+
+### Out of Memory During Indexing
+
+**Solutions**:
+- Index in smaller batches
+- Increase system RAM
+- Use a machine with more memory for initial indexing
+
+## Documentation
+
+- **Technical Design**: See `marxist_search_design.txt` for complete architecture
+- **Backend README**: See `backend/README.md` for detailed backend documentation
+- **Frontend README**: See `frontend/README.md` for frontend documentation
+- **Deployment Guide**: See `deployment/deployment_guide.txt` for comprehensive deployment instructions
 
 ## Contributing
 
@@ -546,4 +374,4 @@ See LICENSE file for details.
 
 ## Acknowledgments
 
-Based on the theoretical and analytical work of the Revolutionary Communist International (RCI) and related organizations.
+Built for searching the theoretical and analytical work of the Revolutionary Communist International (RCI) and related organizations.
