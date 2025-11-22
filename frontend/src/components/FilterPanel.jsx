@@ -49,9 +49,9 @@ const FilterPanel = ({ filters, onFilterChange, onClearFilters }) => {
   const hasActiveFilters = filters.source || filters.author || filters.dateRange;
 
   return (
-    <div className="w-full max-w-4xl mx-auto mb-6">
-      <div className="bg-white border border-gray-200 rounded-lg p-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div className="w-full max-w-4xl mx-auto mb-6 px-2 sm:px-0">
+      <div className="bg-white border border-gray-200 rounded-lg p-3 sm:p-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
           {/* Source Filter */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">

@@ -17,8 +17,8 @@ const ResultCard = ({ result }) => {
   };
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg p-5 hover:shadow-md transition-shadow">
-      <h3 className="text-xl font-semibold text-gray-900 mb-2">
+    <div className="bg-white border border-gray-200 rounded-lg p-3 sm:p-5 hover:shadow-md transition-shadow">
+      <h3 className="text-lg sm:text-xl font-semibold text-gray-900 mb-2">
         <a
           href={result.url}
           target="_blank"
@@ -29,39 +29,39 @@ const ResultCard = ({ result }) => {
         </a>
       </h3>
 
-      <div className="flex items-center gap-2 text-sm text-gray-600 mb-3">
+      <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-gray-600 mb-3">
         <span className="font-medium">{result.source}</span>
         {result.author && (
           <>
             <span>•</span>
-            <span>{result.author}</span>
+            <span className="truncate max-w-[200px]">{result.author}</span>
           </>
         )}
         <span>•</span>
         <span>{formatDate(result.published_date)}</span>
       </div>
 
-      <p className="text-gray-700 mb-3 leading-relaxed">
+      <p className="text-gray-700 mb-3 leading-relaxed text-sm sm:text-base">
         {getExcerpt(result.excerpt)}
       </p>
 
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0">
+        <div className="flex items-center gap-2 sm:gap-3">
           <a
             href={result.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-marxist-red hover:text-red-700 font-medium text-sm"
+            className="text-marxist-red hover:text-red-700 font-medium text-xs sm:text-sm"
           >
             Read Article →
           </a>
           {result.matched_sections > 1 && (
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-              {result.matched_sections} sections matched
+            <span className="inline-flex items-center px-2 sm:px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+              {result.matched_sections} sections
             </span>
           )}
         </div>
-        <div className="text-sm text-gray-500">
+        <div className="text-xs sm:text-sm text-gray-500">
           Score: {result.score.toFixed(2)}
         </div>
       </div>

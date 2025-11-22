@@ -53,19 +53,20 @@ function App() {
     <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* Header */}
       <header className="bg-marxist-red shadow-md">
-        <div className="max-w-7xl mx-auto px-4 py-6">
-          <div className="flex items-center gap-4">
+        <div className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
+          <div className="flex items-center gap-2 sm:gap-4">
             <img
               src="/logo.png"
               alt="Marxist Search Logo"
-              className="h-16 w-16 object-contain bg-white p-2 rounded-lg shadow-sm"
+              className="h-12 w-12 sm:h-16 sm:w-16 object-contain bg-white p-1.5 sm:p-2 rounded-lg shadow-sm flex-shrink-0"
             />
-            <div>
-              <h1 className="text-3xl font-bold text-white">
+            <div className="min-w-0">
+              <h1 className="text-xl sm:text-3xl font-bold text-white">
                 Marxist Article Search
               </h1>
-              <p className="text-red-100 mt-1">
-                Search publications from across the Revolutionary Communist International
+              <p className="text-red-100 mt-0.5 sm:mt-1 text-xs sm:text-base">
+                <span className="hidden sm:inline">Search publications from across the Revolutionary Communist International</span>
+                <span className="sm:hidden">Search RCI publications</span>
               </p>
             </div>
           </div>
@@ -73,7 +74,7 @@ function App() {
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col justify-start pt-[12vh] max-w-7xl mx-auto px-4 py-12 w-full">
+      <main className="flex-1 flex flex-col justify-start pt-[8vh] sm:pt-[12vh] max-w-7xl mx-auto px-3 sm:px-4 py-8 sm:py-12 w-full">
         {/* Stats Display */}
         <div className="mb-8">
           <StatsDisplay />
