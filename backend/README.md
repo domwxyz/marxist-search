@@ -7,7 +7,7 @@ Python backend for the Marxist Search semantic search engine. Handles RSS ingest
 The backend provides a complete pipeline from RSS feeds to searchable vector index:
 
 - **Ingestion**: RSS feed fetching with CMS-specific pagination, content extraction, text normalization
-- **Term Extraction**: Automatic extraction of 150+ Marxist terms with synonym and alias support
+- **Term Extraction**: Automatic extraction of Marxist terms with synonym and alias support
 - **Indexing**: Vector embeddings with BAAI/bge-small-en-v1.5, automatic chunking, txtai index management
 - **Search**: Hybrid semantic + BM25 search with filtering, ranking, and deduplication
 - **API**: FastAPI REST API with async request handling and thread pooling
@@ -367,9 +367,9 @@ Configure term extraction, synonyms, and aliases:
 ```
 
 **Features**:
-- **Synonyms**: 17 synonym groups for query expansion
-- **Terms**: 151 tracked terms across 6 categories (20 people, 23 organizations, 30 concepts, 48 geographic locations, 20 historical events, 10 movements)
-- **Aliases**: 13 bidirectional aliases (e.g., "USSR" ↔ "Soviet Union")
+- **Synonyms**: Synonym groups for query expansion
+- **Terms**: Tracked terms across 6 categories (people, organizations, concepts, geographic locations, historical events, movements)
+- **Aliases**: Bidirectional aliases (e.g., "USSR" ↔ "Soviet Union")
 - Terms are extracted from article titles and content
 - Stored in `term_mentions` table for analytics
 
@@ -553,9 +553,9 @@ Intelligent full-text extraction strategy:
 
 Automatic extraction of Marxist terminology:
 
-- **150+ Terms** across 6 categories
-- **19 Synonym Groups** for query expansion
-- **13 Aliases** with bidirectional resolution
+- **Special Terms** across 6 categories
+- **Synonym Groups** for query expansion
+- **Aliases** with bidirectional resolution
 - Terms extracted from titles and content
 - Stored in `term_mentions` for analytics
 - Used for improved search relevance

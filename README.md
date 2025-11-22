@@ -7,8 +7,8 @@ A semantic search engine for Marxist theoretical and analytical articles from th
 - **Semantic Search**: Natural language queries using BAAI/bge-small-en-v1.5 embeddings with hybrid BM25 keyword search
 - **RSS Archiving**: Automated fetching from 3 RSS feeds with CMS-specific pagination (WordPress, Joomla)
 - **Content Extraction**: Full-text extraction from RSS feeds and web pages using trafilatura
-- **Special Term Extraction**: Automatic extraction of 151 Marxist terms across 6 categories (people, organizations, concepts, geographic, historical events, movements)
-- **Query Expansion**: Synonym support with 17 synonym groups and alias resolution (e.g., "USSR" → "Soviet Union")
+- **Special Term Extraction**: Automatic extraction of Marxist terms across 6 categories (people, organizations, concepts, geographic, historical events, movements)
+- **Query Expansion**: Synonym support with synonym groups and alias resolution (e.g., "USSR" → "Soviet Union")
 - **Advanced Filtering**: Search by date range (including decade-specific: 1990s, 2000s, 2010s, 2020s), source, and author
 - **Search Analytics**: Track search queries, term usage, and result patterns
 - **Incremental Updates**: Automated RSS polling and index updates every 30 minutes via systemd timer
@@ -285,7 +285,7 @@ Combines semantic and keyword search for optimal results:
 - **Semantic (70%)**: Vector similarity using bge-small-en-v1.5 embeddings
 - **BM25 (30%)**: Traditional keyword matching
 - **Title Weighting**: Titles repeated 5x in embeddings for better relevance (only applied to first chunk of multi-chunk articles)
-- **Query Expansion**: 17 synonym groups and 13 aliases automatically expand queries
+- **Query Expansion**: Synonym groups and aliases automatically expand queries
 - **Recency Boosting**: Additive score boosts for recent articles (not multiplicative)
 
 ### Chunking Strategy
