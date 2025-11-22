@@ -56,8 +56,9 @@ SEARCH_CONFIG = {
     "bm25_weight": 0.3,
     "recency_boost": {
         "30_days": 0.05,
-        "90_days": 0.02,
-        "1_year": 0.01
+        "90_days": 0.03,
+        "1_year": 0.02,
+        "3_years": 0.01
     }
 }
 

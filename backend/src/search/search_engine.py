@@ -604,8 +604,9 @@ class SearchEngine:
 
         Boost formula:
         - < 30 days: +0.05
-        - < 90 days: +0.02
-        - < 1 year: +0.01
+        - < 90 days: +0.03
+        - < 1 year: +0.02
+        - < 3 years: +0.01
         """
         now = datetime.now()
 
@@ -640,6 +641,8 @@ class SearchEngine:
                     boost = self.recency_boosts['90_days']
                 elif age_days < 365:
                     boost = self.recency_boosts['1_year']
+                elif age_days < 365 * 3:
+                    boost = self.recency_boosts['3_years']
 
                 if boost > 0:
                     result['original_score'] = result['score']
