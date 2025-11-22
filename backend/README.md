@@ -302,11 +302,13 @@ Configure RSS sources with pagination support:
   "feeds": [
     {
       "name": "In Defence of Marxism",
-      "url": "https://www.marxist.com/rss.xml",
+      "url": "https://marxist.com/index.php?format=feed",
       "pagination_type": "joomla",
       "limit_increment": 5,
       "enabled": true,
-      "organization": "RCI"
+      "organization": "RCI",
+      "language": "en",
+      "region": "international"
     },
     {
       "name": "Revolutionary Communists of America",
@@ -314,7 +316,19 @@ Configure RSS sources with pagination support:
       "pagination_type": "wordpress",
       "limit_increment": 1,
       "enabled": true,
-      "organization": "RCA"
+      "organization": "RCA",
+      "language": "en",
+      "region": "usa"
+    },
+    {
+      "name": "Revolutionary Communist Party",
+      "url": "https://communist.red/feed",
+      "pagination_type": "wordpress",
+      "limit_increment": 1,
+      "enabled": true,
+      "organization": "RCP-UK",
+      "language": "en",
+      "region": "uk"
     }
   ]
 }
@@ -353,9 +367,9 @@ Configure term extraction, synonyms, and aliases:
 ```
 
 **Features**:
-- **Synonyms**: Query expansion for better search results
-- **Terms**: 150+ tracked terms across 6 categories
-- **Aliases**: Bidirectional resolution (e.g., "USSR" ↔ "Soviet Union")
+- **Synonyms**: 17 synonym groups for query expansion
+- **Terms**: 151 tracked terms across 6 categories (20 people, 23 organizations, 30 concepts, 48 geographic locations, 20 historical events, 10 movements)
+- **Aliases**: 13 bidirectional aliases (e.g., "USSR" ↔ "Soviet Union")
 - Terms are extracted from article titles and content
 - Stored in `term_mentions` table for analytics
 
@@ -364,39 +378,46 @@ Configure term extraction, synonyms, and aliases:
 Central configuration for the entire backend:
 
 ```python
-# Database paths
-DATABASE_PATH = "data/articles.db"
-TXTAI_INDEX_PATH = "data/txtai"
+# Database paths (can be overridden via environment variables)
+DATABASE_PATH = os.getenv("DATABASE_PATH", "data/articles.db")
+TXTAI_INDEX_PATH = os.getenv("INDEX_PATH", "data/txtai")
 
 # txtai configuration
 TXTAI_CONFIG = {
     "path": "BAAI/bge-small-en-v1.5",
     "backend": "numpy",  # CPU-only, exact search
-    "content": True
+    "content": False  # Disabled to avoid SQLite cursor recursion errors
 }
 
-# Chunking parameters
-CHUNK_THRESHOLD_WORDS = 3500  # Chunk articles longer than this
-CHUNK_SIZE_WORDS = 1000       # Target chunk size
-CHUNK_OVERLAP_WORDS = 200     # Overlap between chunks
+# Chunking configuration
+CHUNKING_CONFIG = {
+    "threshold_words": 3500,  # Chunk articles longer than this
+    "chunk_size_words": 1000,  # Target chunk size
+    "overlap_words": 200,  # Overlap between chunks
+    "prefer_section_breaks": True,  # Break on paragraph boundaries
+    "section_markers": ["\n\n", "\n"]  # Paragraph markers
+}
 
 # Search configuration
-SEARCH_WEIGHTS = {
-    "semantic_weight": 0.7,   # Semantic search weight
-    "bm25_weight": 0.3        # Keyword search weight
+SEARCH_CONFIG = {
+    "weights": {
+        "semantic_weight": 0.7,   # Semantic search weight
+        "bm25_weight": 0.3        # Keyword search weight
+    },
+    "title_weight_multiplier": 5,  # Repeat titles 5x in embeddings
+    "recency_boost": {
+        "30_days": 0.05,   # Additive boost (not multiplicative)
+        "90_days": 0.03,
+        "1_year": 0.02,
+        "3_years": 0.01
+    }
 }
 
-TITLE_WEIGHT_MULTIPLIER = 5  # Repeat titles 5x in embeddings
-
-# Recency boost
-RECENCY_BOOST = {
-    "30_days": 1.3,
-    "90_days": 1.2,
-    "365_days": 1.1
+# Concurrency configuration
+CONCURRENCY_CONFIG = {
+    "search_thread_pool_size": 4,
+    "max_concurrent_searches": 10
 }
-
-# Thread pool for search
-SEARCH_THREAD_POOL_SIZE = 4
 ```
 
 ## Database Schema
@@ -419,8 +440,9 @@ CREATE TABLE articles (
     word_count INTEGER,
     is_chunked BOOLEAN DEFAULT 0,
     indexed BOOLEAN DEFAULT 0,
-    tags_json TEXT,
-    extracted_terms_json TEXT
+    embedding_version TEXT DEFAULT '1.0',
+    terms_json TEXT,
+    tags_json TEXT
 );
 ```
 
@@ -432,8 +454,9 @@ CREATE TABLE article_chunks (
     id INTEGER PRIMARY KEY,
     article_id INTEGER NOT NULL,
     chunk_index INTEGER NOT NULL,
-    chunk_text TEXT NOT NULL,
+    content TEXT NOT NULL,
     word_count INTEGER,
+    start_position INTEGER,
     FOREIGN KEY (article_id) REFERENCES articles (id)
 );
 ```
@@ -447,10 +470,13 @@ CREATE TABLE rss_feeds (
     url TEXT UNIQUE NOT NULL,
     name TEXT NOT NULL,
     pagination_type TEXT DEFAULT 'standard',
+    limit_increment INTEGER DEFAULT 5,
     last_checked DATETIME,
+    last_modified DATETIME,
+    etag TEXT,
     status TEXT DEFAULT 'active',
     consecutive_failures INTEGER DEFAULT 0,
-    total_articles_fetched INTEGER DEFAULT 0
+    article_count INTEGER DEFAULT 0
 );
 ```
 
@@ -459,10 +485,9 @@ Author statistics and metadata.
 
 ```sql
 CREATE TABLE author_stats (
-    id INTEGER PRIMARY KEY,
-    author_name TEXT UNIQUE NOT NULL,
+    author TEXT PRIMARY KEY,
     article_count INTEGER DEFAULT 0,
-    earliest_article_date DATETIME,
+    first_article_date DATETIME,
     latest_article_date DATETIME
 );
 ```
@@ -474,10 +499,23 @@ Special term occurrences for analytics.
 CREATE TABLE term_mentions (
     id INTEGER PRIMARY KEY,
     article_id INTEGER NOT NULL,
-    term TEXT NOT NULL,
-    category TEXT NOT NULL,
-    count INTEGER DEFAULT 1,
+    term_text TEXT NOT NULL,
+    term_type TEXT NOT NULL,
+    mention_count INTEGER DEFAULT 1,
     FOREIGN KEY (article_id) REFERENCES articles (id)
+);
+```
+
+### search_logs
+Search query logging for analytics.
+
+```sql
+CREATE TABLE search_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    query TEXT NOT NULL,
+    filters_json TEXT,
+    result_count INTEGER,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 ```
 

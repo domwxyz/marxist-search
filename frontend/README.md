@@ -29,9 +29,14 @@ frontend/
 ├── public/
 │   ├── index.html              # HTML template
 │   ├── favicon.ico             # Favicon
-│   ├── logo192.png             # App logo (192x192)
-│   ├── logo512.png             # App logo (512x512)
-│   └── manifest.json           # PWA manifest
+│   ├── android-chrome-192x192.png  # App logo (192x192)
+│   ├── android-chrome-512x512.png  # App logo (512x512)
+│   ├── apple-touch-icon.png    # Apple touch icon
+│   ├── favicon-16x16.png       # Favicon 16x16
+│   ├── favicon-32x32.png       # Favicon 32x32
+│   ├── manifest.json           # PWA manifest
+│   ├── site.webmanifest        # Alternative manifest
+│   └── robots.txt              # Robots.txt
 ├── src/
 │   ├── components/             # React components
 │   │   ├── SearchBar.jsx          # Search input with submit button
@@ -47,10 +52,15 @@ frontend/
 │   ├── utils/                  # Utilities
 │   │   └── api.js                 # API client functions
 │   ├── App.js                  # Main app component
-│   ├── App.css                 # App styles
+│   ├── App.test.js             # App tests
 │   ├── index.js                # Entry point
-│   └── index.css               # Global styles (Tailwind imports)
+│   ├── index.css               # Global styles (Tailwind imports)
+│   ├── setupTests.js           # Test setup
+│   └── reportWebVitals.js      # Performance monitoring
 ├── .env.example                # Environment variables template
+├── .env.production             # Production environment variables
+├── tailwind.config.js          # TailwindCSS configuration
+├── postcss.config.js           # PostCSS configuration
 ├── package.json
 └── README.md
 ```
@@ -152,7 +162,7 @@ Search input with:
 Advanced filters with:
 - **Source filter**: Dropdown populated from API
 - **Author filter**: Dropdown with top authors from API
-- **Date range filter**: Preset options (past week, month, year, decade) plus custom date picker
+- **Date range filter**: Preset options (past week, past month, past 3 months, past year, 1990s, 2000s, 2010s, 2020s) plus custom date picker
 - Clear filters button
 
 ### ResultsList.jsx
@@ -253,8 +263,7 @@ The project uses Tailwind CSS utility classes for styling:
 ### Custom Styles
 
 Custom styles are defined in:
-- `src/App.css` - Component-specific styles
-- `src/index.css` - Global styles and Tailwind imports
+- `src/index.css` - Global styles and Tailwind imports (all styling uses Tailwind utility classes)
 
 ## Deployment
 

@@ -17,7 +17,9 @@ deployment/
 │   └── marxist-search-update.timer
 └── scripts/                         # Utility scripts
     ├── backup.sh
-    └── health_check.sh
+    ├── health_check.sh
+    ├── update_frontend.sh
+    └── update_backend.sh
 ```
 
 ## Files Overview
