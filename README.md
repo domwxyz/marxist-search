@@ -7,9 +7,9 @@ A semantic search engine for Marxist theoretical and analytical articles from th
 - **Semantic Search**: Natural language queries using BAAI/bge-small-en-v1.5 embeddings with hybrid BM25 keyword search
 - **RSS Archiving**: Automated fetching from multiple RSS feeds with CMS-specific pagination (WordPress, Joomla)
 - **Content Extraction**: Full-text extraction from RSS feeds and web pages using trafilatura
-- **Special Term Extraction**: Automatic extraction of 150+ Marxist terms across 6 categories (people, organizations, concepts, geographic, historical events, movements)
-- **Query Expansion**: Synonym support with 19 synonym groups and alias resolution (e.g., "USSR" → "Soviet Union")
-- **Advanced Filtering**: Search by date range, source, and author
+- **Special Term Extraction**: Automatic extraction of Marxist terms across 6 categories (people, organizations, concepts, geographic, historical events, movements)
+- **Query Expansion**: Synonym support with synonym groups and alias resolution (e.g., "USSR" → "Soviet Union")
+- **Advanced Filtering**: Search by date range (including decade-specific: 1990s, 2000s, 2010s, 2020s), source, and author
 - **Search Analytics**: Track search queries, term usage, and result patterns
 - **Incremental Updates**: Automated RSS polling and index updates every 30 minutes via systemd timer
 - **Modern UI**: React frontend with responsive design and TailwindCSS
@@ -175,11 +175,13 @@ Edit `backend/config/rss_feeds.json` to configure RSS sources:
   "feeds": [
     {
       "name": "In Defence of Marxism",
-      "url": "https://www.marxist.com/rss.xml",
+      "url": "https://marxist.com/index.php?format=feed",
       "pagination_type": "joomla",
       "limit_increment": 5,
       "enabled": true,
-      "organization": "RCI"
+      "organization": "RCI",
+      "language": "en",
+      "region": "international"
     }
   ]
 }
@@ -218,11 +220,12 @@ The system automatically extracts terms from articles, resolves aliases, tracks 
 
 Edit `backend/config/search_config.py` for advanced settings:
 
-- **Chunking**: Threshold (3500 words), chunk size (1000 words), overlap (200 words)
+- **Chunking**: Threshold (3500 words), chunk size (1000 words), overlap (200 words), paragraph-boundary preservation
 - **Search Weights**: Semantic (70%), BM25 (30%)
 - **Title Weighting**: 5x repetition for semantic relevance
-- **Recency Boost**: Configurable decay factors
-- **txtai Backend**: numpy (CPU-only, exact search)
+- **Recency Boost**: Additive boosts (0.05 for 30 days, 0.03 for 90 days, 0.02 for 1 year, 0.01 for 3 years)
+- **txtai Backend**: numpy (CPU-only, exact search) with content storage disabled to avoid SQLite cursor errors
+- **Environment Variables**: DATA_DIR, DATABASE_PATH, INDEX_PATH can be overridden for production deployments
 
 ## API Endpoints
 
@@ -281,8 +284,9 @@ The update timer automatically:
 Combines semantic and keyword search for optimal results:
 - **Semantic (70%)**: Vector similarity using bge-small-en-v1.5 embeddings
 - **BM25 (30%)**: Traditional keyword matching
-- **Title Weighting**: Titles repeated 5x in embeddings for better relevance
-- **Query Expansion**: Synonyms and aliases automatically expand queries
+- **Title Weighting**: Titles repeated 5x in embeddings for better relevance (only applied to first chunk of multi-chunk articles)
+- **Query Expansion**: Synonym groups and aliases automatically expand queries
+- **Recency Boosting**: Additive score boosts for recent articles (not multiplicative)
 
 ### Chunking Strategy
 
@@ -308,11 +312,12 @@ Intelligent full-text extraction:
 
 ### Database Schema
 
-- **articles**: Full content, metadata, extracted terms (16,000+ rows)
-- **article_chunks**: Chunks for long articles
-- **rss_feeds**: Feed status and health tracking
+- **articles**: Full content, metadata, extracted terms, embedding version (16,000+ rows)
+- **article_chunks**: Chunks for long articles with start position tracking
+- **rss_feeds**: Feed status, health tracking, ETags, and last modified timestamps
 - **author_stats**: Article counts and date ranges per author
 - **term_mentions**: Special term occurrences for analytics
+- **search_logs**: Search query logging for analytics
 
 ## Performance
 
