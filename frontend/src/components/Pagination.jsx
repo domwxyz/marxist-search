@@ -61,26 +61,26 @@ const Pagination = ({ currentPage, totalResults, limit, onPageChange }) => {
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto mt-8 mb-8">
-      <div className="flex items-center justify-center gap-4">
+    <div className="w-full max-w-4xl mx-auto mt-8 mb-8 px-2 sm:px-0">
+      <div className="flex items-center justify-center gap-2 sm:gap-4">
         {/* Pagination controls */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 sm:gap-2">
           <button
             onClick={handlePrevious}
             disabled={currentPage === 1}
-            className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="px-2 sm:px-4 py-2 border border-gray-300 rounded-md text-xs sm:text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            ← Previous
+            ← <span className="hidden sm:inline">Previous</span><span className="sm:hidden">Prev</span>
           </button>
 
-          <div className="flex gap-1">
+          <div className="flex gap-0.5 sm:gap-1">
             {getPageNumbers().map((page, index) => (
               <button
                 key={index}
                 onClick={() => handlePageClick(page)}
                 disabled={page === '...' || page === currentPage}
                 className={`
-                  min-w-[40px] px-3 py-2 rounded-md text-sm font-medium transition-colors
+                  min-w-[32px] sm:min-w-[40px] px-2 sm:px-3 py-2 rounded-md text-xs sm:text-sm font-medium transition-colors
                   ${page === currentPage
                     ? 'bg-marxist-red text-white'
                     : page === '...'
@@ -98,14 +98,14 @@ const Pagination = ({ currentPage, totalResults, limit, onPageChange }) => {
           <button
             onClick={handleNext}
             disabled={currentPage === totalPages}
-            className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="px-2 sm:px-4 py-2 border border-gray-300 rounded-md text-xs sm:text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            Next →
+            <span className="hidden sm:inline">Next</span><span className="sm:hidden">Next</span> →
           </button>
         </div>
       </div>
 
-      <div className="text-center mt-4 text-sm text-gray-600">
+      <div className="text-center mt-4 text-xs sm:text-sm text-gray-600">
         Page {currentPage} of {totalPages}
       </div>
     </div>
