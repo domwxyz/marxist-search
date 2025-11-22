@@ -11,10 +11,11 @@ const ResultsPerPageSelector = ({ limit, onLimitChange, totalResults, currentPag
 
   return (
     <div className="w-full max-w-4xl mx-auto mb-4 px-2 sm:px-0">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-row items-center justify-between">
+        <div className="flex items-center gap-1 sm:gap-2">
           <label htmlFor="limit-top" className="text-xs sm:text-sm text-gray-700 font-medium whitespace-nowrap">
-            Results per page:
+            <span className="hidden sm:inline">Results per page:</span>
+            <span className="sm:hidden">Per page:</span>
           </label>
           <select
             id="limit-top"
@@ -28,8 +29,9 @@ const ResultsPerPageSelector = ({ limit, onLimitChange, totalResults, currentPag
             <option value={100}>100</option>
           </select>
         </div>
-        <div className="text-xs sm:text-sm text-gray-600">
-          Showing {startResult}-{endResult} of {totalResults.toLocaleString()} results
+        <div className="text-xs sm:text-sm text-gray-600 text-right">
+          <span className="hidden sm:inline">Showing {startResult}-{endResult} of {totalResults.toLocaleString()} results</span>
+          <span className="sm:hidden">{startResult}-{endResult} of {totalResults.toLocaleString()}</span>
         </div>
       </div>
     </div>

@@ -39,12 +39,13 @@ const ResultsList = ({ results, total, queryTime, loading, error }) => {
 
   return (
     <div className="w-full max-w-4xl mx-auto px-2 sm:px-0">
-      <div className="mb-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 sm:gap-0">
-        <p className="text-gray-700 text-sm sm:text-base">
-          <span className="font-semibold">{total.toLocaleString()}</span> articles found
+      <div className="mb-4 flex flex-row items-center justify-between">
+        <p className="text-gray-700 text-xs sm:text-base">
+          <span className="font-semibold">{total.toLocaleString()}</span> <span className="hidden sm:inline">articles found</span><span className="sm:hidden">found</span>
         </p>
         <p className="text-xs sm:text-sm text-gray-500">
-          Query time: {queryTime}ms
+          <span className="hidden sm:inline">Query time: {queryTime}ms</span>
+          <span className="sm:hidden">{queryTime}ms</span>
         </p>
       </div>
 
