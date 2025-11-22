@@ -5,7 +5,7 @@ A semantic search engine for Marxist theoretical and analytical articles from th
 ## Features
 
 - **Semantic Search**: Natural language queries using BAAI/bge-small-en-v1.5 embeddings with hybrid BM25 keyword search
-- **RSS Archiving**: Automated fetching from 3 RSS feeds with CMS-specific pagination (WordPress, Joomla)
+- **RSS Archiving**: Automated fetching from multiple RSS feeds with CMS-specific pagination (WordPress, Joomla)
 - **Content Extraction**: Full-text extraction from RSS feeds and web pages using trafilatura
 - **Special Term Extraction**: Automatic extraction of Marxist terms across 6 categories (people, organizations, concepts, geographic, historical events, movements)
 - **Query Expansion**: Synonym support with synonym groups and alias resolution (e.g., "USSR" → "Soviet Union")
