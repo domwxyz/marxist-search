@@ -56,6 +56,7 @@ class SearchResult(BaseModel):
     author: str = Field(..., description="Article author")
     published_date: str = Field(..., description="Publication date")
     excerpt: str = Field(..., description="Article excerpt")
+    matched_phrase: Optional[str] = Field(None, description="Matched exact phrase for highlighting")
     score: float = Field(..., description="Search relevance score")
     matched_sections: int = Field(..., description="Number of matched sections")
     word_count: int = Field(..., description="Article word count")
