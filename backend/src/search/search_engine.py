@@ -943,9 +943,10 @@ class SearchEngine:
         Uses whole-word matching with regex to avoid matching substrings
         (e.g., "labor" won't match "elaborate").
 
-        If an exact phrase is found in the content (not just title), creates
-        an excerpt centered around that phrase. Otherwise, returns the first
-        200 characters.
+        If an exact phrase is found in the content, creates an excerpt centered
+        around that phrase. Prefers matches in the article body over title, but
+        will use title matches if that's the only occurrence. Otherwise, returns
+        the first 200 characters.
 
         Args:
             content: Full article content
@@ -977,22 +978,21 @@ class SearchEngine:
 
             pos = match.start()
 
-            # Check if this match is only in the title
-            # by seeing if it occurs before the title ends in the content
+            # Check if this match is in the title portion that appears in content
+            # If so, try to find a match in the actual body for a better excerpt
             title_in_content_pos = content_lower.find(title_lower)
             if title_in_content_pos != -1:
                 title_end_pos = title_in_content_pos + len(title_lower)
-                # If match is within title portion, look for next occurrence
+                # If match is within title portion, prefer a body occurrence if available
                 if pos < title_end_pos:
-                    # Look for the phrase after the title
+                    # Look for the phrase after the title for a better excerpt
                     match_after_title = re.search(pattern, content_lower[title_end_pos:])
                     if match_after_title:
+                        # Found in body too - use that for better context
                         pos = title_end_pos + match_after_title.start()
-                    else:
-                        # Only appears in title, skip this phrase
-                        continue
+                    # If not found after title, still use the title occurrence (don't skip!)
 
-            # Found in content! Create excerpt around it
+            # Found a match! Create excerpt around it
             start = max(0, pos - context_chars)
             end = min(len(content), pos + len(phrase) + context_chars)
 
