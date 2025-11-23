@@ -38,7 +38,7 @@ const ResultCard = ({ result }) => {
     return (
       <span>
         {before}
-        <strong className="font-bold bg-yellow-100 text-gray-900">{matched}</strong>
+        <strong className="font-bold">{matched}</strong>
         {after}
       </span>
     );
