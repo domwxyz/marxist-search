@@ -970,12 +970,20 @@ class SearchEngine:
             if pos == -1:
                 continue
 
-            # If match is very early (likely in title), try to find next occurrence
-            if pos < 50:  # First 50 chars likely to be title
-                next_pos = content_lower.find(phrase_lower, pos + 1)
-                if next_pos != -1:
-                    # Found it again later in content, use that
-                    pos = next_pos
+            # Check if this match is only in the title
+            # by seeing if it occurs before the title ends in the content
+            title_in_content_pos = content_lower.find(title_lower)
+            if title_in_content_pos != -1:
+                title_end_pos = title_in_content_pos + len(title_lower)
+                # If match is within title portion, skip to next phrase
+                if pos < title_end_pos:
+                    # Look for the phrase after the title
+                    pos_after_title = content_lower.find(phrase_lower, title_end_pos)
+                    if pos_after_title != -1:
+                        pos = pos_after_title
+                    else:
+                        # Only appears in title, skip this phrase
+                        continue
 
             # Found in content! Create excerpt around it
             start = max(0, pos - context_chars)
