@@ -238,8 +238,12 @@ class SearchEngine:
         # Fetch full content for paginated results
         paginated_with_content = self._enrich_with_content(paginated)
 
-        # Format results
-        formatted = self._format_results(paginated_with_content, query)
+        # Format results with matched phrase info for highlighting
+        formatted = self._format_results(
+            paginated_with_content,
+            query,
+            parsed_query.exact_phrases
+        )
 
         # Calculate query time
         query_time_ms = int((datetime.now() - start_time).total_seconds() * 1000)
@@ -724,9 +728,16 @@ class SearchEngine:
 
         return results
 
-    def _format_results(self, results: List[Dict], query: str) -> List[Dict]:
+    def _format_results(
+        self,
+        results: List[Dict],
+        query: str,
+        exact_phrases: List[str] = None
+    ) -> List[Dict]:
         """
         Format results with excerpts and clean metadata.
+
+        Creates smart excerpts that include matched exact phrases.
 
         Returns list of formatted result dictionaries.
         """
@@ -738,9 +749,14 @@ class SearchEngine:
             if not content:
                 content = result.get('content', '')
 
-            # Create excerpt (first 200 characters)
-            excerpt = content[:200] + '...' if len(content) > 200 else content
-            excerpt = excerpt.strip()
+            title = result.get('title', '')
+
+            # Create smart excerpt that shows matched phrase if available
+            excerpt, matched_phrase = self._create_smart_excerpt(
+                content,
+                title,
+                exact_phrases or []
+            )
 
             # Parse tags and terms from JSON strings
             tags = result.get('tags', '[]')
@@ -766,6 +782,7 @@ class SearchEngine:
                 'author': result.get('author') or 'Unknown',
                 'published_date': result.get('published_date') or '',
                 'excerpt': excerpt,
+                'matched_phrase': matched_phrase,  # For frontend highlighting
                 'score': round(result.get('score', 0.0), 4),
                 'matched_sections': result.get('matched_sections', 1),
                 'word_count': result.get('word_count', 0),
@@ -910,6 +927,83 @@ class SearchEngine:
         }
 
         return stats
+
+    def _create_smart_excerpt(
+        self,
+        content: str,
+        title: str,
+        exact_phrases: List[str],
+        excerpt_length: int = 200,
+        context_chars: int = 100
+    ) -> tuple[str, str | None]:
+        """
+        Create smart excerpt that includes the first matched exact phrase.
+
+        If an exact phrase is found in the content (not just title), creates
+        an excerpt centered around that phrase. Otherwise, returns the first
+        200 characters.
+
+        Args:
+            content: Full article content
+            title: Article title
+            exact_phrases: List of exact phrases to look for
+            excerpt_length: Target excerpt length
+            context_chars: Characters of context before/after match
+
+        Returns:
+            Tuple of (excerpt, matched_phrase) where matched_phrase is None
+            if no phrase was found in content
+        """
+        if not content:
+            return '', None
+
+        content_lower = content.lower()
+        title_lower = title.lower()
+
+        # Try each exact phrase
+        for phrase in exact_phrases:
+            phrase_lower = phrase.lower()
+
+            # Find first occurrence in content
+            pos = content_lower.find(phrase_lower)
+
+            if pos == -1:
+                continue
+
+            # Check if this match is only in the title
+            # by seeing if it occurs before the title ends in the content
+            title_in_content_pos = content_lower.find(title_lower)
+            if title_in_content_pos != -1:
+                title_end_pos = title_in_content_pos + len(title_lower)
+                # If match is within title portion, skip to next phrase
+                if pos < title_end_pos:
+                    # Look for the phrase after the title
+                    pos_after_title = content_lower.find(phrase_lower, title_end_pos)
+                    if pos_after_title != -1:
+                        pos = pos_after_title
+                    else:
+                        # Only appears in title, skip this phrase
+                        continue
+
+            # Found in content! Create excerpt around it
+            start = max(0, pos - context_chars)
+            end = min(len(content), pos + len(phrase) + context_chars)
+
+            excerpt = content[start:end].strip()
+
+            # Add ellipsis if needed
+            if start > 0:
+                excerpt = '...' + excerpt
+            if end < len(content):
+                excerpt = excerpt + '...'
+
+            return excerpt, phrase
+
+        # No exact phrase found in content, return default excerpt
+        excerpt = content[:excerpt_length]
+        if len(content) > excerpt_length:
+            excerpt += '...'
+        return excerpt.strip(), None
 
     def _filter_by_exact_phrases(
         self,

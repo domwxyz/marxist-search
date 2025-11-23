@@ -16,6 +16,34 @@ const ResultCard = ({ result }) => {
     return text.substring(0, maxLength) + '...';
   };
 
+  const highlightMatchedPhrase = (excerpt, matchedPhrase) => {
+    if (!excerpt || !matchedPhrase) {
+      return excerpt;
+    }
+
+    // Find the first occurrence (case-insensitive)
+    const lowerExcerpt = excerpt.toLowerCase();
+    const lowerPhrase = matchedPhrase.toLowerCase();
+    const pos = lowerExcerpt.indexOf(lowerPhrase);
+
+    if (pos === -1) {
+      return excerpt;
+    }
+
+    // Split the excerpt and wrap the matched phrase in <strong>
+    const before = excerpt.substring(0, pos);
+    const matched = excerpt.substring(pos, pos + matchedPhrase.length);
+    const after = excerpt.substring(pos + matchedPhrase.length);
+
+    return (
+      <>
+        {before}
+        <strong className="font-semibold text-gray-900">{matched}</strong>
+        {after}
+      </>
+    );
+  };
+
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-3 sm:p-5 hover:shadow-md transition-shadow">
       <h3 className="text-lg sm:text-xl font-semibold text-gray-900 mb-2">
@@ -42,7 +70,10 @@ const ResultCard = ({ result }) => {
       </div>
 
       <p className="text-gray-700 mb-3 leading-relaxed text-sm sm:text-base">
-        {getExcerpt(result.excerpt)}
+        {result.matched_phrase
+          ? highlightMatchedPhrase(result.excerpt, result.matched_phrase)
+          : getExcerpt(result.excerpt)
+        }
       </p>
 
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0">
