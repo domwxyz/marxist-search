@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import SearchBar from './components/SearchBar';
+import SearchSyntaxHelper from './components/SearchSyntaxHelper';
 import FilterPanel from './components/FilterPanel';
 import ResultsList from './components/ResultsList';
 import Pagination from './components/Pagination';
@@ -88,6 +89,9 @@ function App() {
             onQueryChange={setQuery}
             onSearch={handleSearch}
           />
+
+          {/* Search Syntax Helper */}
+          <SearchSyntaxHelper />
 
           {/* Filter Panel */}
           <FilterPanel
