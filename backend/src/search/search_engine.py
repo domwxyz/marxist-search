@@ -4,6 +4,7 @@ Core search engine implementation with filtering and deduplication.
 
 import sqlite3
 import threading
+import re
 from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta
 from collections import defaultdict
@@ -939,6 +940,9 @@ class SearchEngine:
         """
         Create smart excerpt that includes the first matched exact phrase.
 
+        Uses whole-word matching with regex to avoid matching substrings
+        (e.g., "labor" won't match "elaborate").
+
         If an exact phrase is found in the content (not just title), creates
         an excerpt centered around that phrase. Otherwise, returns the first
         200 characters.
@@ -960,27 +964,30 @@ class SearchEngine:
         content_lower = content.lower()
         title_lower = title.lower()
 
-        # Try each exact phrase
+        # Try each exact phrase with whole-word matching
         for phrase in exact_phrases:
             phrase_lower = phrase.lower()
 
-            # Find first occurrence in content
-            pos = content_lower.find(phrase_lower)
+            # Use regex with word boundaries for whole-word matching
+            pattern = r'\b' + re.escape(phrase_lower) + r'\b'
+            match = re.search(pattern, content_lower)
 
-            if pos == -1:
+            if not match:
                 continue
+
+            pos = match.start()
 
             # Check if this match is only in the title
             # by seeing if it occurs before the title ends in the content
             title_in_content_pos = content_lower.find(title_lower)
             if title_in_content_pos != -1:
                 title_end_pos = title_in_content_pos + len(title_lower)
-                # If match is within title portion, skip to next phrase
+                # If match is within title portion, look for next occurrence
                 if pos < title_end_pos:
                     # Look for the phrase after the title
-                    pos_after_title = content_lower.find(phrase_lower, title_end_pos)
-                    if pos_after_title != -1:
-                        pos = pos_after_title
+                    match_after_title = re.search(pattern, content_lower[title_end_pos:])
+                    if match_after_title:
+                        pos = title_end_pos + match_after_title.start()
                     else:
                         # Only appears in title, skip this phrase
                         continue
@@ -1057,7 +1064,7 @@ class SearchEngine:
             full_text = f"{row['title']} {row['content']}"
             content_map[row['id']] = full_text.lower()
 
-        # Filter results that contain ALL exact phrases
+        # Filter results that contain ALL exact phrases (whole-word matching)
         filtered = []
         for result in results:
             result_id = result.get('id')
@@ -1066,9 +1073,9 @@ class SearchEngine:
             if not content:
                 continue
 
-            # Check if ALL phrases are present
+            # Check if ALL phrases are present as whole words/phrases
             all_present = all(
-                phrase.lower() in content
+                re.search(r'\b' + re.escape(phrase.lower()) + r'\b', content)
                 for phrase in exact_phrases
             )
 
