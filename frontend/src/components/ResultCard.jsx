@@ -16,40 +16,28 @@ const ResultCard = ({ result }) => {
     return text.substring(0, maxLength) + '...';
   };
 
-  const highlightMatchedPhrase = (excerpt, matchedPhrase, title) => {
+  const highlightMatchedPhrase = (excerpt, matchedPhrase) => {
     if (!excerpt || !matchedPhrase) {
-      return <span>{excerpt}</span>;
+      return excerpt;
     }
 
-    // Check if phrase is in excerpt
-    const lowerExcerpt = excerpt.toLowerCase();
-    const lowerPhrase = matchedPhrase.toLowerCase();
-    const posInExcerpt = lowerExcerpt.indexOf(lowerPhrase);
+    // Use regex with word boundaries for whole-word matching
+    // This prevents "labor" from matching "elaborate"
+    const escapedPhrase = matchedPhrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`\\b(${escapedPhrase})\\b`, 'gi');
 
-    // If not in excerpt, check if it's only in title
-    if (posInExcerpt === -1) {
-      const lowerTitle = title.toLowerCase();
-      const posInTitle = lowerTitle.indexOf(lowerPhrase);
-
-      // Only in title, don't highlight
-      if (posInTitle !== -1) {
-        return <span>{excerpt}</span>;
-      }
-
-      // Not in either, just return excerpt
-      return <span>{excerpt}</span>;
-    }
-
-    // Found in excerpt! Highlight it
-    const before = excerpt.substring(0, posInExcerpt);
-    const matched = excerpt.substring(posInExcerpt, posInExcerpt + matchedPhrase.length);
-    const after = excerpt.substring(posInExcerpt + matchedPhrase.length);
+    // Split the excerpt by the matched phrase while preserving the matched text
+    const parts = excerpt.split(regex);
 
     return (
       <span>
-        {before}
-        <strong className="font-bold">{matched}</strong>
-        {after}
+        {parts.map((part, index) => {
+          // Every odd index is a matched phrase (captured group)
+          if (index % 2 === 1) {
+            return <strong key={index} className="font-bold">{part}</strong>;
+          }
+          return part;
+        })}
       </span>
     );
   };
@@ -81,8 +69,8 @@ const ResultCard = ({ result }) => {
 
       <p className="text-gray-700 mb-3 leading-relaxed text-sm sm:text-base">
         {result.matched_phrase
-          ? highlightMatchedPhrase(result.excerpt, result.matched_phrase, result.title)
-          : <span>{result.excerpt}</span>
+          ? highlightMatchedPhrase(result.excerpt, result.matched_phrase)
+          : result.excerpt
         }
       </p>
 
