@@ -16,24 +16,34 @@ const ResultCard = ({ result }) => {
     return text.substring(0, maxLength) + '...';
   };
 
-  const highlightMatchedPhrase = (excerpt, matchedPhrase) => {
+  const highlightMatchedPhrase = (excerpt, matchedPhrase, title) => {
     if (!excerpt || !matchedPhrase) {
       return <span>{excerpt}</span>;
     }
 
-    // Find the first occurrence (case-insensitive)
+    // Check if phrase is in excerpt
     const lowerExcerpt = excerpt.toLowerCase();
     const lowerPhrase = matchedPhrase.toLowerCase();
-    const pos = lowerExcerpt.indexOf(lowerPhrase);
+    const posInExcerpt = lowerExcerpt.indexOf(lowerPhrase);
 
-    if (pos === -1) {
+    // If not in excerpt, check if it's only in title
+    if (posInExcerpt === -1) {
+      const lowerTitle = title.toLowerCase();
+      const posInTitle = lowerTitle.indexOf(lowerPhrase);
+
+      // Only in title, don't highlight
+      if (posInTitle !== -1) {
+        return <span>{excerpt}</span>;
+      }
+
+      // Not in either, just return excerpt
       return <span>{excerpt}</span>;
     }
 
-    // Split the excerpt and wrap the matched phrase in <strong>
-    const before = excerpt.substring(0, pos);
-    const matched = excerpt.substring(pos, pos + matchedPhrase.length);
-    const after = excerpt.substring(pos + matchedPhrase.length);
+    // Found in excerpt! Highlight it
+    const before = excerpt.substring(0, posInExcerpt);
+    const matched = excerpt.substring(posInExcerpt, posInExcerpt + matchedPhrase.length);
+    const after = excerpt.substring(posInExcerpt + matchedPhrase.length);
 
     return (
       <span>
@@ -71,7 +81,7 @@ const ResultCard = ({ result }) => {
 
       <p className="text-gray-700 mb-3 leading-relaxed text-sm sm:text-base">
         {result.matched_phrase
-          ? highlightMatchedPhrase(result.excerpt, result.matched_phrase)
+          ? highlightMatchedPhrase(result.excerpt, result.matched_phrase, result.title)
           : <span>{result.excerpt}</span>
         }
       </p>
