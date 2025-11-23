@@ -18,7 +18,7 @@ const ResultCard = ({ result }) => {
 
   const highlightMatchedPhrase = (excerpt, matchedPhrase) => {
     if (!excerpt || !matchedPhrase) {
-      return excerpt;
+      return <span>{excerpt}</span>;
     }
 
     // Find the first occurrence (case-insensitive)
@@ -27,7 +27,7 @@ const ResultCard = ({ result }) => {
     const pos = lowerExcerpt.indexOf(lowerPhrase);
 
     if (pos === -1) {
-      return excerpt;
+      return <span>{excerpt}</span>;
     }
 
     // Split the excerpt and wrap the matched phrase in <strong>
@@ -36,11 +36,11 @@ const ResultCard = ({ result }) => {
     const after = excerpt.substring(pos + matchedPhrase.length);
 
     return (
-      <>
+      <span>
         {before}
-        <strong className="font-semibold text-gray-900">{matched}</strong>
+        <strong className="font-bold">{matched}</strong>
         {after}
-      </>
+      </span>
     );
   };
 
@@ -72,7 +72,7 @@ const ResultCard = ({ result }) => {
       <p className="text-gray-700 mb-3 leading-relaxed text-sm sm:text-base">
         {result.matched_phrase
           ? highlightMatchedPhrase(result.excerpt, result.matched_phrase)
-          : getExcerpt(result.excerpt)
+          : <span>{result.excerpt}</span>
         }
       </p>
 
