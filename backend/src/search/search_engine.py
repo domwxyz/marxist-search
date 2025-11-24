@@ -361,11 +361,23 @@ class SearchEngine:
                 if result.get('source') != filters['source']:
                     continue
 
-            # Author filter (case-insensitive partial match)
+            # Author filter (word-based matching with boundaries)
             if filters.get('author'):
                 author = result.get('author', '')
-                filter_author = filters['author'].lower()
-                if not author or filter_author not in author.lower():
+                if not author:
+                    continue
+
+                # Split filter into words and check each appears as whole word
+                filter_words = filters['author'].split()
+                author_lower = author.lower()
+
+                # All filter words must appear as whole words in author field
+                all_words_match = all(
+                    re.search(r'\b' + re.escape(word.lower()) + r'\b', author_lower)
+                    for word in filter_words
+                )
+
+                if not all_words_match:
                     continue
 
             # Year filter
