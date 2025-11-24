@@ -223,14 +223,14 @@ class SearchEngine:
                 f"Title phrase filter: {len(filtered_results)} results"
             )
 
-        # Deduplicate and rank
+        # Deduplicate results
         deduplicated = self._deduplicate_results(filtered_results)
         total_count = len(deduplicated)
 
         # Apply recency boosting
         boosted = self._apply_recency_boost(deduplicated)
 
-        # Sort by final score
+        # Sort by final score (semantic + recency)
         sorted_results = sorted(boosted, key=lambda x: x['score'], reverse=True)
 
         # Paginate
@@ -362,13 +362,14 @@ class SearchEngine:
                     continue
 
             # Author filter (word-based matching with boundaries)
-            if filters.get('author'):
-                author = result.get('author', '')
-                if not author:
+            author_filter = filters.get('author')
+            if author_filter and author_filter.strip():
+                author = result.get('author')
+                if not author or not isinstance(author, str):
                     continue
 
                 # Split filter into words and check each appears as whole word
-                filter_words = filters['author'].split()
+                filter_words = author_filter.split()
                 author_lower = author.lower()
 
                 # All filter words must appear as whole words in author field

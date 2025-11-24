@@ -34,7 +34,10 @@ TXTAI_CONFIG = {
     # Content is fetched from articles.db instead during result formatting
     # This eliminates txtai's internal SQLite database entirely
     "content": False,
-    "keyword": True,
+    # DISABLED: BM25 keyword search incompatible with content=False during incremental updates
+    # txtai's upsert() corrupts BM25 arrays when content storage is disabled
+    # Pure semantic search is used instead (still very effective)
+    "keyword": False,
     # Use numpy backend instead of faiss to avoid nflip AttributeError
     # numpy provides CPU-only exact search without requiring additional dependencies
     # It's slower than FAISS for very large datasets but more reliable and already installed
@@ -52,8 +55,11 @@ CHUNKING_CONFIG = {
 
 # Search Configuration
 SEARCH_CONFIG = {
-    "semantic_weight": 0.7,
-    "bm25_weight": 0.3,
+    # Pure semantic search with bge-small-en-v1.5 embeddings
+    # BM25 disabled to prevent index corruption and maximize speed
+    # Users can use exact phrase matching ("quotes") for precision
+    "semantic_weight": 1.0,
+    "bm25_weight": 0.0,
     "recency_boost": {
         "30_days": 0.05,
         "90_days": 0.03,
