@@ -55,10 +55,11 @@ CHUNKING_CONFIG = {
 
 # Search Configuration
 SEARCH_CONFIG = {
-    # BM25 disabled due to index corruption during incremental updates
-    # Pure semantic search provides excellent results with BAAI/bge-small-en-v1.5
-    "semantic_weight": 1.0,
-    "bm25_weight": 0.0,
+    # Hybrid search: semantic + custom BM25 post-processing
+    # txtai's built-in BM25 is disabled (keyword=False) to prevent index corruption
+    # Instead, we apply custom BM25 scoring after semantic search in Python
+    "semantic_weight": 0.7,
+    "bm25_weight": 0.3,
     "recency_boost": {
         "30_days": 0.05,
         "90_days": 0.03,
