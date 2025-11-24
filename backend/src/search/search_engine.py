@@ -182,17 +182,15 @@ class SearchEngine:
         has_exact_phrases = bool(parsed_query.exact_phrases)
         has_title_phrases = bool(parsed_query.title_phrases)
 
-        # When we have exact phrases but NO semantic terms, use database search
-        # This ensures we find ALL documents containing the phrases
-        if (has_exact_phrases or has_title_phrases) and not has_semantic_terms:
-            logger.info("Using database search for exact phrase query (no semantic terms)")
+        # Use database search when there are no semantic terms to search for
+        # This handles: author-only, exact phrases, title phrases, or combinations
+        if not has_semantic_terms:
+            logger.info("Using database search (no semantic terms)")
             raw_results = self._search_database_for_phrases(
                 exact_phrases=parsed_query.exact_phrases,
                 title_phrases=parsed_query.title_phrases,
                 limit=8000
             )
-            # Still need to apply regex filter for word-boundary matching
-            # (LIKE search might have false positives)
             needs_exact_phrase_filter = has_exact_phrases
             needs_title_phrase_filter = has_title_phrases
         else:
