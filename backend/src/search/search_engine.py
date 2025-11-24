@@ -361,9 +361,11 @@ class SearchEngine:
                 if result.get('source') != filters['source']:
                     continue
 
-            # Author filter
+            # Author filter (case-insensitive partial match)
             if filters.get('author'):
-                if result.get('author') != filters['author']:
+                author = result.get('author', '')
+                filter_author = filters['author'].lower()
+                if not author or filter_author not in author.lower():
                     continue
 
             # Year filter
