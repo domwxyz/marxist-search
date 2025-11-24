@@ -30,10 +30,12 @@ class TxtaiManager:
         self.config = config or {
             "path": "BAAI/bge-small-en-v1.5",
             "content": False,  # Disable content storage to avoid SQLite cursor recursion
-            "keyword": True,   # Enable hybrid search (semantic + BM25)
+            "keyword": False,  # DISABLED: BM25 incompatible with content=False during upsert
             "backend": "numpy" # CPU-only exact search, no additional dependencies needed
             # With content=False, metadata is fetched from articles.db instead
             # This eliminates txtai's internal SQLite database and cursor conflicts
+            # Note: keyword=False disables BM25 hybrid search to prevent index corruption
+            # during incremental updates. Pure semantic search is used instead.
         }
 
         self.embeddings: Optional[Embeddings] = None
