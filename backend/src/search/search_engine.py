@@ -15,7 +15,6 @@ from txtai.embeddings import Embeddings
 
 from .filters import SearchFilters
 from .query_parser import QueryParser, ParsedQuery
-from .bm25_scorer import BM25Scorer, combine_scores
 from ..ingestion.term_extractor import TermExtractor
 from config.search_config import SEARCH_CONFIG, INDEX_PATH, DATABASE_PATH, TERMS_CONFIG
 
@@ -73,10 +72,6 @@ class SearchEngine:
 
         # Initialize query parser for power-user syntax
         self.query_parser = QueryParser()
-
-        # Initialize custom BM25 scorer for post-processing
-        # This provides keyword matching without txtai's broken upsert
-        self.bm25_scorer = BM25Scorer(k1=1.5, b=0.75)
 
     def load_index(self):
         """Load txtai index into memory (thread-safe)."""
@@ -228,73 +223,25 @@ class SearchEngine:
                 f"Title phrase filter: {len(filtered_results)} results"
             )
 
-        # Deduplicate first to reduce the number of documents
+        # Deduplicate results
         deduplicated = self._deduplicate_results(filtered_results)
-        logger.debug(f"Deduplicated to {len(deduplicated)} unique articles")
-
-        # Apply custom BM25 scoring for keyword matching (post-processing)
-        # Only score top N semantic results for efficiency (reduces content fetching)
-        # BM25 is applied after deduplication but before final ranking
-        if semantic_query and deduplicated:
-            # Take top semantic results (e.g., top 500) for BM25 scoring
-            # This limits content fetching while still covering most relevant results
-            max_bm25_candidates = min(500, len(deduplicated))
-            top_semantic = sorted(deduplicated, key=lambda x: x['score'], reverse=True)[:max_bm25_candidates]
-
-            # Fetch content for BM25 scoring
-            results_with_content = self._enrich_with_content(top_semantic)
-
-            # Calculate BM25 scores
-            results_with_bm25 = self.bm25_scorer.score_results(
-                query=semantic_query,
-                results=results_with_content,
-                text_field='text',
-                title_field='title'
-            )
-
-            # Combine semantic and BM25 scores
-            for result in results_with_bm25:
-                original_score = result.get('score', 0.0)
-                bm25_score = result.get('bm25_score', 0.0)
-
-                # Store original scores for debugging
-                result['semantic_score'] = original_score
-                result['bm25_score'] = bm25_score
-
-                # Combine with configured weights
-                result['score'] = combine_scores(
-                    semantic_score=original_score,
-                    bm25_score=bm25_score,
-                    semantic_weight=self.semantic_weight,
-                    bm25_weight=self.bm25_weight
-                )
-
-            # Merge BM25-scored results back with remaining results
-            bm25_ids = {r['id'] for r in results_with_bm25}
-            remaining = [r for r in deduplicated if r['id'] not in bm25_ids]
-            deduplicated = results_with_bm25 + remaining
-
-            logger.debug(f"Applied custom BM25 scoring to top {len(results_with_bm25)} candidates")
-
         total_count = len(deduplicated)
 
         # Apply recency boosting
         boosted = self._apply_recency_boost(deduplicated)
 
-        # Sort by final score (combines semantic, BM25, and recency)
+        # Sort by final score (semantic + recency)
         sorted_results = sorted(boosted, key=lambda x: x['score'], reverse=True)
 
         # Paginate
         paginated = sorted_results[offset:offset + limit]
 
-        # Enrich with content if not already present (BM25 path already has it)
-        # Check if first result has content to avoid redundant fetch
-        if paginated and not paginated[0].get('text'):
-            paginated = self._enrich_with_content(paginated)
+        # Fetch full content for paginated results
+        paginated_with_content = self._enrich_with_content(paginated)
 
         # Format results with matched phrase info for highlighting
         formatted = self._format_results(
-            paginated,
+            paginated_with_content,
             query,
             parsed_query.exact_phrases
         )
