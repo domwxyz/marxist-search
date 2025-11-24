@@ -138,7 +138,7 @@ function App() {
       <footer className="bg-white border-t border-gray-200 mt-auto">
         <div className="max-w-7xl mx-auto px-4 py-6">
           <p className="text-center text-gray-600 text-sm">
-            Marxist Article Search Engine - Search across decades of revolutionary theory and analysis
+            Marxist Article Search Engine - Search across decades of revolutionary theory and analysis - Made by Dom
           </p>
         </div>
       </footer>
