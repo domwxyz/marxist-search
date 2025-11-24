@@ -189,10 +189,15 @@ class SearchEngine:
             raw_results = self._search_database_for_phrases(
                 exact_phrases=parsed_query.exact_phrases,
                 title_phrases=parsed_query.title_phrases,
+                filters=filters,  # Pass filters to apply in SQL
                 limit=8000
             )
+            # Filters already applied in SQL, but we still need regex for exact phrase word boundaries
             needs_exact_phrase_filter = has_exact_phrases
             needs_title_phrase_filter = has_title_phrases
+            
+            # Skip Python filter application since SQL already handled it
+            filtered_results = raw_results
         else:
             # Semantic search for queries with semantic terms
             # Optionally expand with synonyms
@@ -218,10 +223,14 @@ class SearchEngine:
             needs_exact_phrase_filter = has_exact_phrases
             needs_title_phrase_filter = has_title_phrases
 
-        # Apply filters (source, author, date)
-        if filters:
+        # Apply filters (source, author, date) - only for semantic search results
+        # Database search already applied filters in SQL
+        if filters and has_semantic_terms:
             filtered_results = self._apply_filters(raw_results, filters)
             logger.debug(f"Filtered {len(raw_results)} -> {len(filtered_results)} results")
+        elif not has_semantic_terms:
+            # Database search already filtered
+            filtered_results = raw_results
         else:
             filtered_results = raw_results
 
@@ -545,20 +554,19 @@ class SearchEngine:
         self,
         exact_phrases: List[str] = None,
         title_phrases: List[str] = None,
+        filters: Dict[str, Any] = None,
         limit: int = 8000
     ) -> List[Dict]:
         """
-        Search database directly for documents containing exact phrases.
+        Search database directly for documents matching phrases and/or filters.
         
-        This bypasses semantic search for pure phrase queries to ensure
+        This bypasses semantic search for pure phrase/filter queries to ensure
         ALL matching documents are found, not just semantically similar ones.
-        
-        Uses LIKE for initial filtering (fast), then regex filter is applied
-        later for word-boundary accuracy.
         
         Args:
             exact_phrases: Phrases that must appear in content or title
             title_phrases: Phrases that must appear in title only
+            filters: Optional filters (author, source, date) to apply in SQL
             limit: Maximum results
             
         Returns:
@@ -573,10 +581,7 @@ class SearchEngine:
         # Exact phrase conditions (must appear in content OR title)
         if exact_phrases:
             for phrase in exact_phrases:
-                # Use LIKE with wildcards for substring matching
-                # SQLite LIKE is case-insensitive for ASCII by default
                 conditions.append("(LOWER(a.content) LIKE ? ESCAPE '\\' OR LOWER(a.title) LIKE ? ESCAPE '\\')")
-                # Escape any % or _ in the phrase, then wrap with wildcards
                 escaped_phrase = phrase.lower().replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
                 pattern = f"%{escaped_phrase}%"
                 params.extend([pattern, pattern])
@@ -587,6 +592,47 @@ class SearchEngine:
                 conditions.append("LOWER(a.title) LIKE ? ESCAPE '\\'")
                 escaped_phrase = phrase.lower().replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
                 params.append(f"%{escaped_phrase}%")
+        
+        # Apply filters directly in SQL for efficiency
+        if filters:
+            # Author filter
+            if filters.get('author'):
+                # Use LIKE for partial matching (e.g., "Alan Woods" matches "Alan Woods and John Smith")
+                author = filters['author'].replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+                conditions.append("LOWER(a.author) LIKE ? ESCAPE '\\'")
+                params.append(f"%{author.lower()}%")
+            
+            # Source filter
+            if filters.get('source'):
+                conditions.append("a.source = ?")
+                params.append(filters['source'])
+            
+            # Date range filters
+            date_range = filters.get('date_range', '').lower()
+            if date_range == 'past_week':
+                conditions.append("a.published_date >= date('now', '-7 days')")
+            elif date_range == 'past_month':
+                conditions.append("a.published_date >= date('now', '-30 days')")
+            elif date_range == 'past_3months':
+                conditions.append("a.published_date >= date('now', '-90 days')")
+            elif date_range == 'past_year':
+                conditions.append("a.published_date >= date('now', '-365 days')")
+            elif date_range == '2020s':
+                conditions.append("CAST(strftime('%Y', a.published_date) AS INTEGER) BETWEEN 2020 AND 2029")
+            elif date_range == '2010s':
+                conditions.append("CAST(strftime('%Y', a.published_date) AS INTEGER) BETWEEN 2010 AND 2019")
+            elif date_range == '2000s':
+                conditions.append("CAST(strftime('%Y', a.published_date) AS INTEGER) BETWEEN 2000 AND 2009")
+            elif date_range == '1990s':
+                conditions.append("CAST(strftime('%Y', a.published_date) AS INTEGER) BETWEEN 1990 AND 1999")
+            
+            # Custom date range
+            if filters.get('start_date'):
+                conditions.append("a.published_date >= ?")
+                params.append(filters['start_date'])
+            if filters.get('end_date'):
+                conditions.append("a.published_date <= ?")
+                params.append(filters['end_date'])
         
         where_clause = " AND ".join(conditions) if conditions else "1=1"
         
@@ -631,12 +677,12 @@ class SearchEngine:
                 'chunk_index': 0,
                 'tags': row['tags'],
                 'terms': row['terms'],
-                'score': 1.0,  # Equal scores for phrase matches (sorted by date)
-                'text': None  # Content fetched later for final results only
+                'score': 1.0,
+                'text': None
             }
             results.append(result)
         
-        logger.info(f"Database phrase search found {len(results)} potential matches")
+        logger.info(f"Database search found {len(results)} matches (filters applied in SQL)")
         return results
 
     def _enrich_with_filter_metadata(self, results: List) -> List[Dict]:
