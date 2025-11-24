@@ -362,13 +362,14 @@ class SearchEngine:
                     continue
 
             # Author filter (word-based matching with boundaries)
-            if filters.get('author'):
-                author = result.get('author', '')
-                if not author:
+            author_filter = filters.get('author')
+            if author_filter and author_filter.strip():
+                author = result.get('author')
+                if not author or not isinstance(author, str):
                     continue
 
                 # Split filter into words and check each appears as whole word
-                filter_words = filters['author'].split()
+                filter_words = author_filter.split()
                 author_lower = author.lower()
 
                 # All filter words must appear as whole words in author field
