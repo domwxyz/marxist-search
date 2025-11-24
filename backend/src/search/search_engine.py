@@ -164,46 +164,71 @@ class SearchEngine:
         # Get semantic query for vector search
         semantic_query = parsed_query.get_semantic_query()
 
-        # Expand query with synonyms if enabled
+        # Expand query with synonyms if enabled (only for semantic search)
         original_query = semantic_query
-        if self.enable_query_expansion and self.term_extractor and semantic_query:
-            try:
-                expanded = self._expand_query(semantic_query)
-                if expanded != semantic_query:
-                    logger.info(f"Query expanded: '{semantic_query}' -> '{expanded}'")
-                    semantic_query = expanded
-            except Exception as e:
-                logger.warning(f"Query expansion failed: {e}")
-
+        
         logger.info(
-            f"Executing search: semantic_query='{semantic_query}', "
-            f"filters={filters}, limit={limit}, "
+            f"Executing search: query='{query}', "
+            f"semantic_terms={parsed_query.semantic_terms}, "
             f"exact_phrases={parsed_query.exact_phrases}, "
-            f"title_phrases={parsed_query.title_phrases}"
+            f"title_phrases={parsed_query.title_phrases}, "
+            f"author_filter={parsed_query.author_filter}"
         )
 
         start_time = datetime.now()
 
-        # Execute txtai search (semantic + BM25)
-        try:
-            raw_results = self._execute_txtai_search(
-                query=semantic_query if semantic_query else query,
+        # Determine search strategy based on query composition
+        has_semantic_terms = bool(parsed_query.semantic_terms)
+        has_exact_phrases = bool(parsed_query.exact_phrases)
+        has_title_phrases = bool(parsed_query.title_phrases)
+
+        # When we have exact phrases but NO semantic terms, use database search
+        # This ensures we find ALL documents containing the phrases
+        if (has_exact_phrases or has_title_phrases) and not has_semantic_terms:
+            logger.info("Using database search for exact phrase query (no semantic terms)")
+            raw_results = self._search_database_for_phrases(
+                exact_phrases=parsed_query.exact_phrases,
+                title_phrases=parsed_query.title_phrases,
                 limit=8000
             )
-            logger.debug(f"txtai returned {len(raw_results)} raw results")
-        except Exception as e:
-            logger.error(f"Search failed: {e}")
-            raise
+            # Still need to apply regex filter for word-boundary matching
+            # (LIKE search might have false positives)
+            needs_exact_phrase_filter = has_exact_phrases
+            needs_title_phrase_filter = has_title_phrases
+        else:
+            # Semantic search for queries with semantic terms
+            # Optionally expand with synonyms
+            if self.enable_query_expansion and self.term_extractor and semantic_query:
+                try:
+                    expanded = self._expand_query(semantic_query)
+                    if expanded != semantic_query:
+                        logger.info(f"Query expanded: '{semantic_query}' -> '{expanded}'")
+                        semantic_query = expanded
+                except Exception as e:
+                    logger.warning(f"Query expansion failed: {e}")
 
-        # Apply filters
+            try:
+                raw_results = self._execute_txtai_search(
+                    query=semantic_query if semantic_query else query,
+                    limit=8000
+                )
+                logger.debug(f"txtai returned {len(raw_results)} raw results")
+            except Exception as e:
+                logger.error(f"Search failed: {e}")
+                raise
+
+            needs_exact_phrase_filter = has_exact_phrases
+            needs_title_phrase_filter = has_title_phrases
+
+        # Apply filters (source, author, date)
         if filters:
             filtered_results = self._apply_filters(raw_results, filters)
             logger.debug(f"Filtered {len(raw_results)} -> {len(filtered_results)} results")
         else:
             filtered_results = raw_results
 
-        # Apply exact phrase matching (post-filter for security)
-        if parsed_query.exact_phrases:
+        # Apply exact phrase matching with regex (for word boundary accuracy)
+        if needs_exact_phrase_filter and parsed_query.exact_phrases:
             filtered_results = self._filter_by_exact_phrases(
                 filtered_results,
                 parsed_query.exact_phrases
@@ -214,7 +239,7 @@ class SearchEngine:
             )
 
         # Apply title phrase matching
-        if parsed_query.title_phrases:
+        if needs_title_phrase_filter and parsed_query.title_phrases:
             filtered_results = self._filter_by_title_phrases(
                 filtered_results,
                 parsed_query.title_phrases
@@ -517,6 +542,104 @@ class SearchEngine:
         enriched_results = self._enrich_with_filter_metadata(results)
 
         return enriched_results
+        
+    def _search_database_for_phrases(
+        self,
+        exact_phrases: List[str] = None,
+        title_phrases: List[str] = None,
+        limit: int = 8000
+    ) -> List[Dict]:
+        """
+        Search database directly for documents containing exact phrases.
+        
+        This bypasses semantic search for pure phrase queries to ensure
+        ALL matching documents are found, not just semantically similar ones.
+        
+        Uses LIKE for initial filtering (fast), then regex filter is applied
+        later for word-boundary accuracy.
+        
+        Args:
+            exact_phrases: Phrases that must appear in content or title
+            title_phrases: Phrases that must appear in title only
+            limit: Maximum results
+            
+        Returns:
+            List of result dicts with metadata (no content yet)
+        """
+        self.connect_db()
+        cursor = self.db_conn.cursor()
+        
+        conditions = []
+        params = []
+        
+        # Exact phrase conditions (must appear in content OR title)
+        if exact_phrases:
+            for phrase in exact_phrases:
+                # Use LIKE with wildcards for substring matching
+                # SQLite LIKE is case-insensitive for ASCII by default
+                conditions.append("(LOWER(a.content) LIKE ? ESCAPE '\\' OR LOWER(a.title) LIKE ? ESCAPE '\\')")
+                # Escape any % or _ in the phrase, then wrap with wildcards
+                escaped_phrase = phrase.lower().replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+                pattern = f"%{escaped_phrase}%"
+                params.extend([pattern, pattern])
+        
+        # Title phrase conditions (must appear in title)
+        if title_phrases:
+            for phrase in title_phrases:
+                conditions.append("LOWER(a.title) LIKE ? ESCAPE '\\'")
+                escaped_phrase = phrase.lower().replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+                params.append(f"%{escaped_phrase}%")
+        
+        where_clause = " AND ".join(conditions) if conditions else "1=1"
+        
+        query = f"""
+            SELECT
+                a.id as article_id,
+                a.title,
+                a.url,
+                a.source,
+                a.author,
+                a.published_date,
+                a.word_count,
+                a.terms_json as terms,
+                a.tags_json as tags,
+                CAST(strftime('%Y', a.published_date) AS INTEGER) as published_year,
+                CAST(strftime('%m', a.published_date) AS INTEGER) as published_month,
+                a.is_chunked,
+                a.id as id
+            FROM articles a
+            WHERE {where_clause} AND a.indexed = 1
+            ORDER BY a.published_date DESC
+            LIMIT ?
+        """
+        
+        params.append(limit)
+        cursor.execute(query, params)
+        
+        results = []
+        for row in cursor.fetchall():
+            result = {
+                'id': row['id'],
+                'article_id': row['article_id'],
+                'title': row['title'],
+                'url': row['url'],
+                'source': row['source'],
+                'author': row['author'],
+                'published_date': row['published_date'],
+                'published_year': row['published_year'],
+                'published_month': row['published_month'],
+                'word_count': row['word_count'],
+                'is_chunk': False,
+                'chunk_index': 0,
+                'tags': row['tags'],
+                'terms': row['terms'],
+                'score': 1.0,  # Equal scores for phrase matches (sorted by date)
+                'text': None  # Content fetched later for final results only
+            }
+            results.append(result)
+        
+        logger.info(f"Database phrase search found {len(results)} potential matches")
+        return results
 
     def _enrich_with_filter_metadata(self, results: List) -> List[Dict]:
         """
@@ -1035,6 +1158,9 @@ class SearchEngine:
         """
         Filter results to only those containing ALL exact phrases.
 
+        Uses whole-word regex matching to avoid false positives
+        (e.g., "labor" won't match "elaborate").
+
         Security: Done in Python, no SQL injection possible.
 
         Args:
@@ -1047,13 +1173,13 @@ class SearchEngine:
         if not exact_phrases:
             return results
 
+        if not results:
+            return []
+
         self.connect_db()
 
         # Get content for all results (we need it to check exact matches)
         result_ids = [r['id'] for r in results]
-
-        if not result_ids:
-            return []
 
         cursor = self.db_conn.cursor()
         placeholders = ','.join('?' * len(result_ids))
@@ -1072,11 +1198,10 @@ class SearchEngine:
 
         cursor.execute(query, result_ids + result_ids)
 
-        # Build content map
+        # Build content map: combine title and content for searching
         content_map = {}
         for row in cursor.fetchall():
-            # Combine title and content for searching
-            full_text = f"{row['title']} {row['content']}"
+            full_text = f"{row['title'] or ''} {row['content'] or ''}"
             content_map[row['id']] = full_text.lower()
 
         # Filter results that contain ALL exact phrases (whole-word matching)
@@ -1086,17 +1211,23 @@ class SearchEngine:
             content = content_map.get(result_id, '').lower()
 
             if not content:
+                # If no content found in map, skip this result
+                logger.debug(f"No content found for result id {result_id}")
                 continue
 
             # Check if ALL phrases are present as whole words/phrases
-            all_present = all(
-                re.search(r'\b' + re.escape(phrase.lower()) + r'\b', content)
-                for phrase in exact_phrases
-            )
+            all_present = True
+            for phrase in exact_phrases:
+                # Use regex with word boundaries for whole-word matching
+                pattern = r'\b' + re.escape(phrase.lower()) + r'\b'
+                if not re.search(pattern, content):
+                    all_present = False
+                    break
 
             if all_present:
                 filtered.append(result)
 
+        logger.debug(f"Exact phrase filter: {len(results)} -> {len(filtered)} results")
         return filtered
 
     def _filter_by_title_phrases(
