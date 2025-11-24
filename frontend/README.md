@@ -12,6 +12,7 @@ React frontend for the Marxist Search semantic search engine. Provides a modern,
 ## Features
 
 - **Semantic Search**: Natural language search with 300ms debouncing
+- **Advanced Search Syntax**: Power-user syntax with exact phrases (`"text"`), title search (`title:"text"`), and author filtering (`author:"Name"`)
 - **Request Cancellation**: Automatic cancellation of stale requests when new search initiated
 - **Advanced Filters**: Filter by source, author, and date range
 - **Date Range Presets**: Quick filters (past week, month, year, decade) plus custom date picker
@@ -40,6 +41,7 @@ frontend/
 ├── src/
 │   ├── components/             # React components
 │   │   ├── SearchBar.jsx          # Search input with submit button
+│   │   ├── SearchSyntaxHelper.jsx # Advanced search syntax documentation
 │   │   ├── FilterPanel.jsx        # Source, author, date filters
 │   │   ├── ResultsList.jsx        # Results container
 │   │   ├── ResultCard.jsx         # Individual result card
@@ -158,6 +160,13 @@ Search input with:
 - Enter key support
 - Debouncing (300ms)
 
+### SearchSyntaxHelper.jsx
+Advanced search syntax documentation with:
+- Collapsible help panel
+- Syntax examples (exact phrases, title search, author filter, combined queries)
+- Syntax rules reference
+- Interactive examples users can learn from
+
 ### FilterPanel.jsx
 Advanced filters with:
 - **Source filter**: Dropdown populated from API
@@ -215,6 +224,44 @@ Manages filter state:
 - Custom date range (start/end dates)
 - Clear all filters function
 - Filter state persistence
+
+## Advanced Search Syntax
+
+Users can use power-user syntax for precise searches:
+
+### Exact Phrase Search
+Use double quotes to search for exact phrases in article content:
+```
+"permanent revolution"
+```
+
+### Title Search
+Search only in article titles using `title:`:
+```
+title:"The Labour Theory"
+```
+
+### Author Filter
+Filter by specific author using `author:`:
+```
+author:"Alan Woods"
+```
+
+### Combined Queries
+Combine multiple syntax elements with regular semantic search:
+```
+title:"Theory" author:"Woods" capitalism
+"dialectical materialism" USSR title:"Revolution"
+```
+
+**Syntax Rules**:
+- `"text"` - Exact phrase match in content (uses whole-word boundaries)
+- `title:"text"` - Search in article titles only
+- `author:"Name"` - Filter by author
+- Regular words use semantic search (similar meaning)
+- All syntax elements can be combined in a single query
+
+The `SearchSyntaxHelper` component displays these examples to users in a collapsible panel below the search bar.
 
 ## API Integration
 
