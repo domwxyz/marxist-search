@@ -9,7 +9,7 @@ The backend provides a complete pipeline from RSS feeds to searchable vector ind
 - **Ingestion**: RSS feed fetching with CMS-specific pagination, content extraction, text normalization
 - **Term Extraction**: Automatic extraction of Marxist terms with synonym and alias support
 - **Indexing**: Vector embeddings with BAAI/bge-small-en-v1.5, automatic chunking, txtai index management
-- **Search**: Hybrid semantic + BM25 search with filtering, ranking, and deduplication
+- **Search**: Hybrid semantic + BM25 search with power-user syntax (exact phrases, title/author filters), filtering, ranking, and deduplication
 - **API**: FastAPI REST API with async request handling and thread pooling
 - **CLI**: Comprehensive command-line interface for all operations
 - **Analytics**: Search query tracking and term usage analytics
@@ -161,9 +161,47 @@ python -m src.cli.marxist_cli search "revolution" --source "In Defence of Marxis
 python -m src.cli.marxist_cli search "capitalism" --date-range past_year
 python -m src.cli.marxist_cli search "palestine" --start-date 2023-01-01 --end-date 2024-12-31
 
+# Advanced search syntax
+python -m src.cli.marxist_cli search '"permanent revolution"'
+python -m src.cli.marxist_cli search 'title:"Labour Theory"'
+python -m src.cli.marxist_cli search 'author:"Alan Woods"'
+python -m src.cli.marxist_cli search 'title:"Theory" author:"Woods" capitalism'
+
 # Limit results
 python -m src.cli.marxist_cli search "socialism" --limit 20
 ```
+
+## Advanced Search Syntax
+
+The search engine supports power-user syntax for precise queries:
+
+**Exact Phrase Search**: Use double quotes for exact phrase matching in content
+```bash
+python -m src.cli.marxist_cli search '"permanent revolution"'
+```
+
+**Title Search**: Search only in article titles using `title:`
+```bash
+python -m src.cli.marxist_cli search 'title:"The Labour Theory"'
+```
+
+**Author Filter**: Filter by specific author using `author:`
+```bash
+python -m src.cli.marxist_cli search 'author:"Alan Woods"'
+```
+
+**Combined Queries**: Combine multiple syntax elements with semantic search
+```bash
+python -m src.cli.marxist_cli search 'title:"Theory" author:"Woods" capitalism'
+python -m src.cli.marxist_cli search '"dialectical materialism" USSR title:"Revolution"'
+```
+
+**Syntax Rules**:
+- `"text"` - Exact phrase match in content (uses whole-word boundaries)
+- `title:"text"` - Search in article titles only
+- `author:"Name"` - Filter by author
+- Regular words use semantic search (similar meaning)
+- All syntax elements can be combined in a single query
 
 ### Statistics
 
@@ -199,7 +237,7 @@ API available at:
 ## API Endpoints
 
 ### POST /api/v1/search
-Search articles with natural language query and filters.
+Search articles with natural language query and filters. Supports advanced search syntax.
 
 **Request Body**:
 ```json
@@ -212,6 +250,14 @@ Search articles with natural language query and filters.
   "end_date": "2024-12-31",
   "limit": 10
 }
+```
+
+**Advanced Search Syntax Examples**:
+```json
+{"query": "\"permanent revolution\""}
+{"query": "title:\"Labour Theory\""}
+{"query": "author:\"Alan Woods\""}
+{"query": "title:\"Theory\" author:\"Woods\" capitalism"}
 ```
 
 **Response**:

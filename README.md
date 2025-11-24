@@ -5,6 +5,7 @@ A semantic search engine for Marxist theoretical and analytical articles from th
 ## Features
 
 - **Semantic Search**: Natural language queries using BAAI/bge-small-en-v1.5 embeddings with hybrid BM25 keyword search
+- **Advanced Search Syntax**: Power-user syntax with exact phrase matching (`"quoted text"`), title search (`title:"text"`), and author filtering (`author:"Name"`)
 - **RSS Archiving**: Automated fetching from multiple RSS feeds with CMS-specific pagination (WordPress, Joomla)
 - **Content Extraction**: Full-text extraction from RSS feeds and web pages using trafilatura
 - **Special Term Extraction**: Automatic extraction of Marxist terms across 6 categories (people, organizations, concepts, geographic, historical events, movements)
@@ -122,9 +123,51 @@ python -m src.cli.marxist_cli search "climate change"
 python -m src.cli.marxist_cli search "imperialism" --author "Alan Woods"
 python -m src.cli.marxist_cli search "palestine" --date-range past_year
 
+# Advanced search syntax
+python -m src.cli.marxist_cli search '"permanent revolution"'              # Exact phrase
+python -m src.cli.marxist_cli search 'title:"Labour Theory"'               # Title search
+python -m src.cli.marxist_cli search 'author:"Alan Woods"'                 # Author filter
+python -m src.cli.marxist_cli search 'title:"Theory" author:"Woods" capitalism'  # Combined
+
 # Statistics
 python -m src.cli.marxist_cli stats                    # Comprehensive statistics
 ```
+
+## Advanced Search Syntax
+
+The search engine supports power-user syntax for precise queries:
+
+### Exact Phrase Search
+Use double quotes to search for exact phrases in article content:
+```
+"permanent revolution"
+```
+
+### Title Search
+Search only in article titles using `title:`:
+```
+title:"The Labour Theory"
+```
+
+### Author Filter
+Filter by specific author using `author:`:
+```
+author:"Alan Woods"
+```
+
+### Combined Queries
+Combine multiple syntax elements with regular semantic search:
+```
+title:"Theory" author:"Woods" capitalism
+"dialectical materialism" USSR title:"Revolution"
+```
+
+**Syntax Rules**:
+- `"text"` - Exact phrase match in content (uses whole-word boundaries)
+- `title:"text"` - Search in article titles only
+- `author:"Name"` - Filter by author
+- Regular words use semantic search (similar meaning)
+- All syntax elements can be combined in a single query
 
 ## Project Structure
 
