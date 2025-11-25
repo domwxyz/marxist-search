@@ -109,9 +109,9 @@ RSS_CONFIG = {
 
 # Concurrency Configuration
 CONCURRENCY_CONFIG = {
-    "uvicorn_workers": 1,
+    "uvicorn_workers": 3,
     "search_thread_pool_size": 4,
-    "max_concurrent_searches": 10,
+    "max_concurrent_searches": 24,
     "search_timeout_seconds": 5.0,
     "rss_concurrent_fetches": 5
 }
