@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useCallback } from 'react';
 import SearchBar from './components/SearchBar';
 import SearchSyntaxHelper from './components/SearchSyntaxHelper';
 import FilterPanel from './components/FilterPanel';
@@ -49,6 +49,12 @@ function App() {
     updateFilter('limit', newLimit);
     updateFilter('offset', 0); // Reset to first page
   };
+  
+  // Reset pagination to page 1 when query changes
+  const handleQueryChange = useCallback((newQuery) => {
+    setQuery(newQuery);
+    updateFilter('offset', 0);
+  }, [setQuery, updateFilter]);
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -86,7 +92,7 @@ function App() {
           {/* Search Bar */}
           <SearchBar
             query={query}
-            onQueryChange={setQuery}
+            onQueryChange={handleQueryChange}
             onSearch={handleSearch}
           />
 
