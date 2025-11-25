@@ -29,7 +29,7 @@ ExecStart=/opt/marxist-search/backend/venv/bin/uvicorn \
     src.api.main:app \
     --host 0.0.0.0 \
     --port 8000 \
-    --workers 1 \
+    --workers 3 \
     --log-level info \
     --no-access-log
 
@@ -40,7 +40,7 @@ StartLimitInterval=0
 
 # Resource limits
 LimitNOFILE=65536
-MemoryMax=4G
+MemoryMax=6G
 
 # Security hardening
 NoNewPrivileges=true
