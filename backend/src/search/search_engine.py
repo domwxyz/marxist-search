@@ -10,13 +10,20 @@ from datetime import datetime, timedelta
 from collections import defaultdict
 import logging
 import json
+import math
 
 from txtai.embeddings import Embeddings
 
 from .filters import SearchFilters
 from .query_parser import QueryParser, ParsedQuery
 from ..ingestion.term_extractor import TermExtractor
-from config.search_config import SEARCH_CONFIG, INDEX_PATH, DATABASE_PATH, TERMS_CONFIG
+from config.search_config import (
+    SEARCH_CONFIG, 
+    INDEX_PATH, 
+    DATABASE_PATH, 
+    TERMS_CONFIG,
+    RERANKING_CONFIG
+)
 
 logger = logging.getLogger('search')
 
@@ -259,17 +266,30 @@ class SearchEngine:
         deduplicated = self._deduplicate_results(filtered_results)
         total_count = len(deduplicated)
 
-        # Apply recency boosting
+        # === Multi-signal reranking ===
+        query_terms = parsed_query.semantic_terms
+
+        # 1. Title term boost (free - no content fetch needed)
+        if query_terms:
+            deduplicated = self._apply_title_term_boost(deduplicated, query_terms)
+
+        # 2. Keyword frequency boost on top candidates
+        max_terms = RERANKING_CONFIG['keyword_max_query_terms']
+        if query_terms and len(query_terms) <= max_terms:
+            deduplicated = self._apply_keyword_boost(deduplicated, query_terms)
+
+        # 3. Recency boost
         boosted = self._apply_recency_boost(deduplicated)
 
-        # Sort by final score (semantic + recency)
+        # Sort by final combined score
         sorted_results = sorted(boosted, key=lambda x: x['score'], reverse=True)
 
         # Paginate
         paginated = sorted_results[offset:offset + limit]
 
-        # Fetch full content for paginated results
-        paginated_with_content = self._enrich_with_content(paginated)
+        # Fetch content for results that don't have it yet
+        # (top_n from keyword boost already have content)
+        paginated_with_content = self._ensure_content(paginated)
 
         # Format results with matched phrase info for highlighting
         formatted = self._format_results(
@@ -909,6 +929,128 @@ class SearchEngine:
                 logger.warning(f"Failed to parse date '{published_date}': {e}")
                 continue
 
+        return results
+
+    def _apply_title_term_boost(self, results: List[Dict], query_terms: List[str]) -> List[Dict]:
+        """
+        Boost results where query terms appear in the title.
+        
+        This is essentially free since title is already in result metadata.
+        Rewards "obvious" matches where the query directly matches the title.
+        
+        Args:
+            results: Deduplicated search results
+            query_terms: Parsed query terms (semantic_terms from parser)
+            
+        Returns:
+            Results with title boost applied to scores
+        """
+        if not query_terms:
+            return results
+        
+        max_boost = RERANKING_CONFIG['title_boost_max']
+        
+        for result in results:
+            title_lower = result.get('title', '').lower()
+            
+            # Count how many query terms appear in title (whole word match)
+            terms_in_title = sum(
+                1 for term in query_terms 
+                if re.search(r'\b' + re.escape(term.lower()) + r'\b', title_lower)
+            )
+            
+            if terms_in_title > 0:
+                # Boost based on coverage (what % of query terms are in title)
+                coverage = terms_in_title / len(query_terms)
+                boost = max_boost * coverage
+                result['title_boost'] = round(boost, 4)
+                result['score'] += boost
+        
+        return results
+
+    def _apply_keyword_boost(self, results: List[Dict], query_terms: List[str]) -> List[Dict]:
+        """
+        Apply lightweight keyword frequency boost to top candidates.
+        
+        Fetches content for top N results only, applies log-scaled term 
+        frequency scoring (pseudo-BM25), then re-sorts. This catches cases
+        where semantically similar but keyword-sparse results outrank
+        documents that actually contain the query terms frequently.
+        
+        Args:
+            results: Results after deduplication (sorted by semantic score)
+            query_terms: Parsed query terms
+            
+        Returns:
+            Results with keyword boost applied and re-sorted
+        """
+        if not query_terms or not results:
+            return results
+        
+        top_n = RERANKING_CONFIG['keyword_rerank_top_n']
+        max_boost = RERANKING_CONFIG['keyword_boost_max']
+        scale = RERANKING_CONFIG['keyword_boost_scale']
+        
+        # Split into top candidates (to rerank) and tail (keep as-is)
+        top_candidates = results[:top_n]
+        tail = results[top_n:]
+        
+        # Fetch content for top candidates only
+        top_with_content = self._enrich_with_content(top_candidates)
+        
+        # Apply term frequency boost
+        for result in top_with_content:
+            content = result.get('text', '').lower()
+            if not content:
+                continue
+            
+            total_tf_score = 0
+            for term in query_terms:
+                # Count occurrences (whole word matching)
+                pattern = r'\b' + re.escape(term.lower()) + r'\b'
+                count = len(re.findall(pattern, content))
+                
+                # Log-scaled TF (diminishing returns after ~10 mentions)
+                if count > 0:
+                    import math
+                    tf = 1 + math.log(1 + count)
+                    total_tf_score += tf
+            
+            # Normalize by number of query terms
+            avg_tf = total_tf_score / len(query_terms)
+            
+            # Scale to configured max boost
+            boost = min(max_boost, avg_tf * scale)
+            result['keyword_boost'] = round(boost, 4)
+            result['score'] += boost
+        
+        # Re-sort top candidates by new combined score
+        top_with_content.sort(key=lambda x: x['score'], reverse=True)
+        
+        # Combine: reranked top + unchanged tail
+        return top_with_content + tail
+
+    def _ensure_content(self, results: List[Dict]) -> List[Dict]:
+        """
+        Fetch content only for results that don't already have it.
+        
+        Avoids double-fetching for results that went through keyword boost.
+        
+        Args:
+            results: Results, some may already have 'text' field
+            
+        Returns:
+            All results with 'text' field populated
+        """
+        needs_content = [r for r in results if not r.get('text')]
+        
+        if needs_content:
+            enriched = self._enrich_with_content(needs_content)
+            enriched_map = {r['id']: r for r in enriched}
+            for r in needs_content:
+                if r['id'] in enriched_map:
+                    r['text'] = enriched_map[r['id']].get('text', '')
+        
         return results
 
     def _format_results(

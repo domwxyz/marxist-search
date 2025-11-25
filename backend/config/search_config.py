@@ -68,6 +68,19 @@ SEARCH_CONFIG = {
     }
 }
 
+# Reranking Configuration
+# Applied after semantic search to boost results with query term matches
+RERANKING_CONFIG = {
+    # Title term boost: rewards results where query terms appear in title
+    "title_boost_max": 0.08,           # Maximum boost when all query terms in title
+    
+    # Keyword frequency boost: pseudo-BM25 on top candidates
+    "keyword_boost_max": 0.06,         # Maximum keyword frequency boost
+    "keyword_boost_scale": 0.02,       # Scaling factor for log TF score
+    "keyword_rerank_top_n": 150,       # Number of top candidates to rerank
+    "keyword_max_query_terms": 5,      # Skip keyword boost for longer queries (perf)
+}
+
 # Title Weighting Configuration
 # Prepend article title N times to content before embedding
 # This weights title matching in semantic search results
