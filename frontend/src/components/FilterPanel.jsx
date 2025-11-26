@@ -43,6 +43,9 @@ const FilterPanel = ({ filters, onFilterChange, onClearFilters }) => {
     } else {
       setShowCustomDate(false);
       onFilterChange('dateRange', value);
+      // Clear custom date fields when switching to preset ranges
+      onFilterChange('customStartDate', '');
+      onFilterChange('customEndDate', '');
     }
   };
 
