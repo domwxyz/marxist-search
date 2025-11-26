@@ -4,7 +4,7 @@ A semantic search engine for Marxist theoretical and analytical articles from th
 
 ## Features
 
-- **Semantic Search**: Natural language queries using BAAI/bge-small-en-v1.5 embeddings with hybrid BM25 keyword search
+- **Semantic Search**: Natural language queries using BAAI/bge-small-en-v1.5 embeddings with custom multi-signal reranking
 - **Advanced Search Syntax**: Power-user syntax with exact phrase matching (`"quoted text"`), title search (`title:"text"`), and author filtering (`author:"Name"`)
 - **RSS Archiving**: Automated fetching from multiple RSS feeds with CMS-specific pagination (WordPress, Joomla)
 - **Content Extraction**: Full-text extraction from RSS feeds and web pages using trafilatura
@@ -20,8 +20,8 @@ A semantic search engine for Marxist theoretical and analytical articles from th
 
 **Backend**:
 - Python 3.11+ with FastAPI
-- txtai (vector search) with BAAI/bge-small-en-v1.5 embeddings
-- SQLite (metadata and content storage)
+- txtai (vector embeddings only, content=False) with BAAI/bge-small-en-v1.5 embeddings
+- SQLite (metadata and full content storage)
 - feedparser (RSS parsing) + trafilatura (web scraping)
 - Click CLI with Rich formatting
 
@@ -264,10 +264,14 @@ The system automatically extracts terms from articles, resolves aliases, tracks 
 Edit `backend/config/search_config.py` for advanced settings:
 
 - **Chunking**: Threshold (3500 words), chunk size (1000 words), overlap (200 words), paragraph-boundary preservation
-- **Search Weights**: Semantic (70%), BM25 (30%)
-- **Title Weighting**: 5x repetition for semantic relevance
-- **Recency Boost**: Additive boosts (0.05 for 30 days, 0.03 for 90 days, 0.02 for 1 year, 0.01 for 3 years)
-- **txtai Backend**: numpy (CPU-only, exact search) with content storage disabled to avoid SQLite cursor errors
+- **Search Strategy**: Pure semantic search (100%) - BM25 disabled to prevent index corruption during incremental updates
+- **Title Weighting**: 5x repetition for semantic relevance (applied during indexing)
+- **Custom Reranking**: Multi-signal reranking applied after semantic search
+  - Title term boost (max +0.08): Rewards results where query terms appear in title
+  - Keyword frequency boost (max +0.06): Pseudo-BM25 on top 150 candidates using log-scaled term frequency
+  - Recency boost: Additive boosts (+0.07 for 7 days, +0.05 for 30 days, +0.03 for 90 days, +0.02 for 1 year, +0.01 for 3 years)
+- **txtai Configuration**: numpy backend (CPU-only, exact search), content storage disabled (content=False)
+- **Content Storage**: All content stored in SQLite (articles.db), fetched on-demand for final results only
 - **Environment Variables**: DATA_DIR, DATABASE_PATH, INDEX_PATH can be overridden for production deployments
 
 ## API Endpoints
@@ -322,14 +326,18 @@ The update timer automatically:
 
 ## Architecture Highlights
 
-### Hybrid Search
+### Search Architecture
 
-Combines semantic and keyword search for optimal results:
-- **Semantic (70%)**: Vector similarity using bge-small-en-v1.5 embeddings
-- **BM25 (30%)**: Traditional keyword matching
+Pure semantic search with custom multi-signal reranking:
+- **Semantic Search (100%)**: Vector similarity using bge-small-en-v1.5 embeddings
+  - BM25 disabled in txtai to prevent index corruption during incremental updates
+  - Content not stored in txtai (content=False) - fetched from SQLite instead
 - **Title Weighting**: Titles repeated 5x in embeddings for better relevance (only applied to first chunk of multi-chunk articles)
 - **Query Expansion**: Synonym groups and aliases automatically expand queries
-- **Recency Boosting**: Additive score boosts for recent articles (not multiplicative)
+- **Custom Reranking**: Multi-signal scoring applied after semantic search
+  - **Title Term Boost**: Rewards results where query terms appear in title (+0.08 max)
+  - **Keyword Frequency Boost**: Pseudo-BM25 on top 150 candidates using log-scaled term frequency (+0.06 max)
+  - **Recency Boosting**: Additive score boosts for recent articles (7 days: +0.07, 30 days: +0.05, 90 days: +0.03, 1 year: +0.02, 3 years: +0.01)
 
 ### Chunking Strategy
 
