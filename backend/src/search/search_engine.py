@@ -879,6 +879,7 @@ class SearchEngine:
         Apply recency boost to search scores.
 
         Boost formula:
+        - < 7 days: +0.07
         - < 30 days: +0.05
         - < 90 days: +0.03
         - < 1 year: +0.02
@@ -911,7 +912,9 @@ class SearchEngine:
 
                 # Apply boost
                 boost = 0.0
-                if age_days < 30:
+                if age_days < 7:
+                    boost = self.recency_boosts['7_days']
+                elif age_days < 30:
                     boost = self.recency_boosts['30_days']
                 elif age_days < 90:
                     boost = self.recency_boosts['90_days']

@@ -61,6 +61,7 @@ SEARCH_CONFIG = {
     "semantic_weight": 1.0,
     "bm25_weight": 0.0,
     "recency_boost": {
+        "7_days": 0.07,
         "30_days": 0.05,
         "90_days": 0.03,
         "1_year": 0.02,
