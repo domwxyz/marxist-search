@@ -8,8 +8,8 @@ The backend provides a complete pipeline from RSS feeds to searchable vector ind
 
 - **Ingestion**: RSS feed fetching with CMS-specific pagination, content extraction, text normalization
 - **Term Extraction**: Automatic extraction of Marxist terms with synonym and alias support
-- **Indexing**: Vector embeddings with BAAI/bge-small-en-v1.5, automatic chunking, txtai index management
-- **Search**: Hybrid semantic + BM25 search with power-user syntax (exact phrases, title/author filters), filtering, ranking, and deduplication
+- **Indexing**: Vector embeddings with BAAI/bge-small-en-v1.5, automatic chunking, txtai index management (content=False, no internal storage)
+- **Search**: Pure semantic search with custom multi-signal reranking (title boost, keyword boost, recency boost), power-user syntax (exact phrases, title/author filters), filtering, and deduplication
 - **API**: FastAPI REST API with async request handling and thread pooling
 - **CLI**: Comprehensive command-line interface for all operations
 - **Analytics**: Search query tracking and term usage analytics
@@ -432,7 +432,8 @@ TXTAI_INDEX_PATH = os.getenv("INDEX_PATH", "data/txtai")
 TXTAI_CONFIG = {
     "path": "BAAI/bge-small-en-v1.5",
     "backend": "numpy",  # CPU-only, exact search
-    "content": False  # Disabled to avoid SQLite cursor recursion errors
+    "content": False,    # No internal content storage - content fetched from SQLite
+    "keyword": False     # BM25 disabled to prevent index corruption during incremental updates
 }
 
 # Chunking configuration
@@ -444,25 +445,35 @@ CHUNKING_CONFIG = {
     "section_markers": ["\n\n", "\n"]  # Paragraph markers
 }
 
-# Search configuration
+# Search configuration - pure semantic search
 SEARCH_CONFIG = {
-    "weights": {
-        "semantic_weight": 0.7,   # Semantic search weight
-        "bm25_weight": 0.3        # Keyword search weight
-    },
-    "title_weight_multiplier": 5,  # Repeat titles 5x in embeddings
+    "semantic_weight": 1.0,   # Pure semantic search (100%)
+    "bm25_weight": 0.0,       # BM25 disabled (0%)
     "recency_boost": {
-        "30_days": 0.05,   # Additive boost (not multiplicative)
+        "7_days": 0.07,    # Additive boost (not multiplicative)
+        "30_days": 0.05,
         "90_days": 0.03,
         "1_year": 0.02,
         "3_years": 0.01
     }
 }
 
+# Reranking configuration - custom multi-signal reranking
+RERANKING_CONFIG = {
+    "title_boost_max": 0.08,           # Maximum boost when all query terms in title
+    "keyword_boost_max": 0.06,         # Maximum keyword frequency boost
+    "keyword_boost_scale": 0.02,       # Scaling factor for log TF score
+    "keyword_rerank_top_n": 150,       # Number of top candidates to rerank
+    "keyword_max_query_terms": 5,      # Skip keyword boost for longer queries (perf)
+}
+
+# Title weighting - applied during indexing
+TITLE_WEIGHT_MULTIPLIER = 5  # Repeat titles 5x in embeddings
+
 # Concurrency configuration
 CONCURRENCY_CONFIG = {
     "search_thread_pool_size": 4,
-    "max_concurrent_searches": 10
+    "max_concurrent_searches": 24
 }
 ```
 
@@ -617,16 +628,21 @@ Long articles are automatically chunked:
 - Each chunk indexed separately
 - Smart deduplication returns highest-scoring chunk per article
 
-### Hybrid Search
+### Search Architecture
 
-Combines semantic and keyword search:
+Pure semantic search with custom multi-signal reranking:
 
-- **Semantic (70%)**: Vector similarity with bge-small-en-v1.5
-- **BM25 (30%)**: Traditional keyword matching
-- **Title Weighting**: Titles repeated 5x for better matching
-- **Query Expansion**: Synonyms and aliases expand queries
-- **Recency Boost**: Recent articles boosted (30/90/365 days)
-- **Smart Deduplication**: Groups chunks, returns best per article
+- **Semantic Search (100%)**: Vector similarity with bge-small-en-v1.5 embeddings
+  - BM25 disabled in txtai (`keyword: False`) to prevent index corruption during incremental updates
+  - Content not stored in txtai (`content: False`) - all content fetched from SQLite database instead
+- **Title Weighting**: Titles repeated 5x during indexing for better semantic relevance
+- **Query Expansion**: Synonyms and aliases automatically expand queries
+- **Custom Reranking**: Multi-signal reranking applied after semantic search retrieval
+  - **Title Term Boost**: Rewards results where query terms appear in title (max +0.08)
+  - **Keyword Frequency Boost**: Pseudo-BM25 on top 150 candidates using log-scaled term frequency (max +0.06)
+  - **Recency Boost**: Additive boosts for recent articles (7 days: +0.07, 30 days: +0.05, 90 days: +0.03, 1 year: +0.02, 3 years: +0.01)
+- **Smart Deduplication**: Groups chunks by article, returns highest-scoring chunk per article
+- **On-Demand Content Fetching**: Content fetched from SQLite only for final paginated results (not for all 8000 candidates)
 
 ### Text Normalization
 
