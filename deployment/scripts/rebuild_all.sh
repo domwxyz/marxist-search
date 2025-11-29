@@ -270,7 +270,7 @@ log_info "Starting index build..."
 log_info "This will create vector embeddings for all articles"
 log_info "Progress will be logged below..."
 
-sudo -u "$APP_USER" TRANSFORMERS_TRUST_REMOTE_CODE=1 DATA_DIR="$DATA_DIR" ../venv/bin/python -m src.cli.marxist_cli index build
+sudo -u "$APP_USER" DATA_DIR="$DATA_DIR" ../venv/bin/python -m src.cli.marxist_cli index build
 
 END_TIME=$(date +%s)
 DURATION=$((END_TIME - START_TIME))

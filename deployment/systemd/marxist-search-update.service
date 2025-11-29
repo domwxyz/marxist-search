@@ -15,7 +15,6 @@ WorkingDirectory=/opt/marxist-search/backend
 Environment="PATH=/opt/marxist-search/venv/bin:/usr/local/bin:/usr/bin:/bin"
 Environment="PYTHONPATH=/opt/marxist-search/backend"
 Environment="ENVIRONMENT=production"
-Environment="TRANSFORMERS_TRUST_REMOTE_CODE=1"
 
 # Data paths (production)
 Environment="DATA_DIR=/var/lib/marxist-search"

@@ -28,14 +28,8 @@ TERMS_CONFIG = str(CONFIG_DIR / "terms_config.json")
 ANALYTICS_CONFIG = str(CONFIG_DIR / "analytics_config.json")
 
 # txtai Configuration
-# Model path: Use local model directory to avoid HuggingFace trust_remote_code prompts
-# Download model first: sudo /opt/marxist-search/deployment/scripts/download_model.sh
-# If local model not found, falls back to HuggingFace (may prompt for trust_remote_code)
-LOCAL_MODEL_PATH = Path("/var/lib/marxist-search/models/gte-base-en-v1.5")
-MODEL_PATH = str(LOCAL_MODEL_PATH) if LOCAL_MODEL_PATH.exists() else "Alibaba-NLP/gte-base-en-v1.5"
-
 TXTAI_CONFIG = {
-    "path": MODEL_PATH,
+    "path": "BAAI/bge-base-en-v1.5",
     # Disable content storage to avoid SQLite cursor recursion errors
     # Content is fetched from articles.db instead during result formatting
     # This eliminates txtai's internal SQLite database entirely
@@ -47,24 +41,23 @@ TXTAI_CONFIG = {
     # Use numpy backend instead of faiss to avoid nflip AttributeError
     # numpy provides CPU-only exact search without requiring additional dependencies
     # It's slower than FAISS for very large datasets but more reliable and already installed
-    "backend": "numpy",
-    # Required for Alibaba-NLP model to load custom code without interactive prompt
-    # Only needed if using HuggingFace Hub (not needed for local models)
-    "trust_remote_code": True
+    "backend": "numpy"
 }
 
 # Chunking Configuration
+# bge-base-en-v1.5 has 512 token context (~384 words)
+# For articles longer than threshold, split into chunks
 CHUNKING_CONFIG = {
-    "threshold_words": 5500,  # Model handles ~6000 words
-    "chunk_size_words": 2000,  # Larger chunks now useful
-    "overlap_words": 300,      # ~15% overlap
+    "threshold_words": 350,    # Chunk if article > 350 words (~467 tokens)
+    "chunk_size_words": 300,   # Each chunk ~300 words (~400 tokens)
+    "overlap_words": 50,       # ~17% overlap for context continuity
     "prefer_section_breaks": True,
     "section_markers": ["##", "###", "\n\n"]
 }
 
 # Search Configuration
 SEARCH_CONFIG = {
-    # Pure semantic search with bge-small-en-v1.5 embeddings
+    # Pure semantic search with bge-base-en-v1.5 embeddings
     # BM25 disabled to prevent index corruption and maximize speed
     # Users can use exact phrase matching ("quotes") for precision
     "semantic_weight": 1.0,

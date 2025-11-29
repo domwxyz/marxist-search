@@ -163,7 +163,7 @@ log_info "Progress will be logged below..."
 echo ""
 
 cd "$APP_DIR/backend"
-sudo -u "$APP_USER" TRANSFORMERS_TRUST_REMOTE_CODE=1 DATA_DIR="$DATA_DIR" ../venv/bin/python -m src.cli.marxist_cli index build
+sudo -u "$APP_USER" DATA_DIR="$DATA_DIR" ../venv/bin/python -m src.cli.marxist_cli index build
 
 END_TIME=$(date +%s)
 DURATION=$((END_TIME - START_TIME))
