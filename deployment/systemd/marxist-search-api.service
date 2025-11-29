@@ -13,7 +13,7 @@ Group=marxist
 WorkingDirectory=/opt/marxist-search/backend
 
 # Environment
-Environment="PATH=/opt/marxist-search/backend/venv/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PATH=/opt/marxist-search/venv/bin:/usr/local/bin:/usr/bin:/bin"
 Environment="PYTHONPATH=/opt/marxist-search/backend"
 Environment="ENVIRONMENT=production"
 Environment="DEBUG=false"
@@ -25,7 +25,7 @@ Environment="INDEX_PATH=/var/lib/marxist-search/txtai"
 Environment="CACHE_PATH=/var/lib/marxist-search/cache"
 
 # Service execution
-ExecStart=/opt/marxist-search/backend/venv/bin/uvicorn \
+ExecStart=/opt/marxist-search/venv/bin/uvicorn \
     src.api.main:app \
     --host 0.0.0.0 \
     --port 8000 \
@@ -47,11 +47,11 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/marxist-search /var/log/news-search
+ReadWritePaths=/var/lib/marxist-search /var/log/marxist-search
 
 # Logging
-StandardOutput=append:/var/log/news-search/api.log
-StandardError=append:/var/log/news-search/errors.log
+StandardOutput=append:/var/log/marxist-search/api.log
+StandardError=append:/var/log/marxist-search/errors.log
 SyslogIdentifier=marxist-search-api
 
 [Install]
