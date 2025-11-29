@@ -191,44 +191,34 @@ class SearchEngine:
         has_title_phrases = bool(parsed_query.title_phrases)
 
         # Determine if this is a pure phrase query (phrases but no semantic terms)
-        # These should fetch ALL matches and score semantically using phrase text
+        # These should use semantic search with the phrase as query for relevance ranking
         is_pure_phrase_query = (not has_semantic_terms) and (has_exact_phrases or has_title_phrases)
 
-        # Use database search when there are no semantic terms to search for
-        # This handles: pure phrase queries, author-only, or combinations
-        if not has_semantic_terms:
-            logger.info("Using database search (no semantic terms)")
+        # Check if this is a filter-only query (no searchable content at all)
+        is_filter_only = not has_semantic_terms and not has_exact_phrases and not has_title_phrases
 
-            # For pure phrase queries, get ALL matches (no limit) to score semantically
-            # For filter-only queries (author/source/date only), limit to 8000
-            search_limit = None if is_pure_phrase_query else 8000
-
+        # Use database search ONLY for filter-only queries (author/source/date only)
+        # For pure phrase queries, use semantic search for better performance
+        if is_filter_only:
+            logger.info("Using database search (filter-only query)")
             raw_results = self._search_database_for_phrases(
-                exact_phrases=parsed_query.exact_phrases,
-                title_phrases=parsed_query.title_phrases,
-                filters=filters,  # Pass filters to apply in SQL
-                limit=search_limit
+                exact_phrases=None,
+                title_phrases=None,
+                filters=filters,
+                limit=8000
             )
-
-            # For pure phrase queries, score ALL results semantically using phrase text
-            if is_pure_phrase_query:
-                semantic_query_for_scoring = parsed_query.get_semantic_query()
-                logger.info(
-                    f"Pure phrase query detected - scoring {len(raw_results)} results "
-                    f"semantically against: '{semantic_query_for_scoring}'"
-                )
-                raw_results = self._score_results_semantically(raw_results, semantic_query_for_scoring)
-
-            # Filters already applied in SQL, but we still need regex for exact phrase word boundaries
-            needs_exact_phrase_filter = has_exact_phrases
-            needs_title_phrase_filter = has_title_phrases
-
-            # Skip Python filter application since SQL already handled it
+            # Filters already applied in SQL
             filtered_results = raw_results
+            needs_exact_phrase_filter = False
+            needs_title_phrase_filter = False
         else:
-            # Semantic search for queries with semantic terms
-            # Optionally expand with synonyms
-            if self.enable_query_expansion and self.term_extractor and semantic_query:
+            # Semantic search for all other queries (semantic terms, pure phrases, or combined)
+            # For pure phrase queries, semantic_query contains the phrase text
+            if is_pure_phrase_query:
+                logger.info(f"Pure phrase query - using semantic search with: '{semantic_query}'")
+
+            # Optionally expand with synonyms (but not for pure phrase queries)
+            if self.enable_query_expansion and self.term_extractor and semantic_query and not is_pure_phrase_query:
                 try:
                     expanded = self._expand_query(semantic_query)
                     if expanded != semantic_query:
@@ -250,14 +240,12 @@ class SearchEngine:
             needs_exact_phrase_filter = has_exact_phrases
             needs_title_phrase_filter = has_title_phrases
 
-        # Apply filters (source, author, date) - only for semantic search results
-        # Database search already applied filters in SQL
-        if filters and has_semantic_terms:
+        # Apply filters (source, author, date)
+        # Semantic search and pure phrase queries need Python filtering
+        # Filter-only database search already applied filters in SQL
+        if filters and not is_filter_only:
             filtered_results = self._apply_filters(raw_results, filters)
             logger.debug(f"Filtered {len(raw_results)} -> {len(filtered_results)} results")
-        elif not has_semantic_terms:
-            # Database search already filtered
-            filtered_results = raw_results
         else:
             filtered_results = raw_results
 
