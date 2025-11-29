@@ -4,7 +4,7 @@ A semantic search engine for Marxist theoretical and analytical articles from th
 
 ## Features
 
-- **Semantic Search**: Natural language queries using BAAI/bge-small-en-v1.5 embeddings with custom multi-signal reranking
+- **Semantic Search**: Natural language queries using BAAI/bge-base-en-v1.5 embeddings with custom multi-signal reranking
 - **Advanced Search Syntax**: Power-user syntax with exact phrase matching (`"quoted text"`), title search (`title:"text"`), and author filtering (`author:"Name"`)
 - **RSS Archiving**: Automated fetching from multiple RSS feeds with CMS-specific pagination (WordPress, Joomla)
 - **Content Extraction**: Full-text extraction from RSS feeds and web pages using trafilatura
@@ -20,7 +20,7 @@ A semantic search engine for Marxist theoretical and analytical articles from th
 
 **Backend**:
 - Python 3.11+ with FastAPI
-- txtai (vector embeddings only, content=False) with BAAI/bge-small-en-v1.5 embeddings
+- txtai (vector embeddings only, content=False) with BAAI/bge-base-en-v1.5 embeddings
 - SQLite (metadata and full content storage)
 - feedparser (RSS parsing) + trafilatura (web scraping)
 - Click CLI with Rich formatting
@@ -329,7 +329,7 @@ The update timer automatically:
 ### Search Architecture
 
 Pure semantic search with custom multi-signal reranking:
-- **Semantic Search (100%)**: Vector similarity using bge-small-en-v1.5 embeddings
+- **Semantic Search (100%)**: Vector similarity using bge-base-en-v1.5 embeddings
   - BM25 disabled in txtai to prevent index corruption during incremental updates
   - Content not stored in txtai (content=False) - fetched from SQLite instead
 - **Title Weighting**: Titles repeated 5x in embeddings for better relevance (only applied to first chunk of multi-chunk articles)
