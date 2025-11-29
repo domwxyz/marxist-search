@@ -297,7 +297,7 @@ def index_build(db_path, index_path, force):
     This will:
     1. Load articles from the database
     2. Chunk long articles (>5500 words)
-    3. Generate embeddings using gte-base-en-v1.5
+    3. Generate embeddings using bge-base-en-v1.5
     4. Build and save the txtai index
     """
     from src.indexing.indexing_service import build_index
