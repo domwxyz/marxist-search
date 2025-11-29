@@ -20,7 +20,7 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 DOMAIN="${1:-YOUR_DOMAIN_HERE}"
 APP_DIR="/opt/marxist-search"
 DATA_DIR="/var/lib/marxist-search"
-LOG_DIR="/var/log/news-search"
+LOG_DIR="/var/log/marxist-search"
 APP_USER="marxist"
 APP_GROUP="marxist"
 
@@ -355,7 +355,7 @@ fi
 log_info "Setting up log rotation..."
 
 cat > /etc/logrotate.d/marxist-search <<EOF
-/var/log/news-search/*.log {
+/var/log/marxist-search/*.log {
     daily
     rotate 14
     compress
@@ -411,9 +411,9 @@ echo "  - API: systemctl status marxist-search-api"
 echo "  - Update Timer: systemctl status marxist-search-update.timer"
 echo ""
 echo "Logs:"
-echo "  - API: tail -f /var/log/news-search/api.log"
-echo "  - Updates: tail -f /var/log/news-search/ingestion.log"
-echo "  - Errors: tail -f /var/log/news-search/errors.log"
+echo "  - API: tail -f /var/log/marxist-search/api.log"
+echo "  - Updates: tail -f /var/log/marxist-search/ingestion.log"
+echo "  - Errors: tail -f /var/log/marxist-search/errors.log"
 echo ""
 echo -e "${YELLOW}IMPORTANT: Initial Data Setup Required${NC}"
 echo "The API service will not start until you complete these steps:"
