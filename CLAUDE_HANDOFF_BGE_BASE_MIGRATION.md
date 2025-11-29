@@ -4,8 +4,6 @@
 
 We attempted to upgrade from `bge-small-en-v1.5` to `gte-base-en-v1.5` (8192 context) but hit trust_remote_code interactive prompt issues that break nohup execution. We're now switching to `bge-base-en-v1.5` as a middle ground - better than small, no trust_remote_code hassle.
 
-**Branch**: `claude/overhaul-deployment-script-01TLReTfVknTkFyuURC7mZiS`
-
 ## What's Already Done
 
 ✅ `backend/config/search_config.py` - Updated to use bge-base-en-v1.5
@@ -95,24 +93,6 @@ CHUNKING_CONFIG = {
 - Most Marxist articles are essay-length, so chunking prevents truncation
 - Section breaks preserve logical article structure
 
-### Alternative Chunking Options
-
-If you find 350-word threshold too aggressive:
-
-**Conservative** (fewer chunks):
-```python
-"threshold_words": 500,
-"chunk_size_words": 350,
-"overlap_words": 75,
-```
-
-**Aggressive** (more granular):
-```python
-"threshold_words": 250,
-"chunk_size_words": 250,
-"overlap_words": 40,
-```
-
 ## Verification Checklist
 
 Run these checks to ensure clean migration:
@@ -140,28 +120,6 @@ git status
 # Should show: clean working tree OR only expected changes
 ```
 
-## Testing the Configuration
-
-After all cleanup is done:
-
-1. **Verify imports work**:
-```bash
-cd /home/user/marxist-search/backend
-../venv/bin/python -c "from config.search_config import TXTAI_CONFIG; print(TXTAI_CONFIG)"
-# Should print config with "BAAI/bge-base-en-v1.5"
-```
-
-2. **Test model loading** (optional, takes a moment):
-```bash
-../venv/bin/python -c "
-from txtai.embeddings import Embeddings
-config = {'path': 'BAAI/bge-base-en-v1.5', 'content': False}
-embeddings = Embeddings(config)
-print('Model loaded successfully!')
-"
-# Should NOT prompt for trust_remote_code
-```
-
 ## Commit and Push
 
 Once everything is verified:
@@ -176,7 +134,7 @@ git commit -m "Complete migration to bge-base-en-v1.5 with optimized chunking
 - Clean documentation of gte-base references
 - Verify bge-base-en-v1.5 loads without interactive prompts"
 
-git push -u origin claude/overhaul-deployment-script-01TLReTfVknTkFyuURC7mZiS
+git push -u origin branch
 ```
 
 ## Expected Build Times
@@ -185,15 +143,6 @@ With bge-base-en-v1.5:
 - Database rebuild: ~1-2 hours (if needed)
 - Index build: ~3-5 hours
 - **Total**: 4-7 hours (well under 8-hour requirement)
-
-## Model Comparison Reference
-
-| Model | Size | Context | Dims | Build Time | Trust Remote Code |
-|-------|------|---------|------|------------|-------------------|
-| bge-small-en-v1.5 | 0.13 GB | 512 | 384 | ~2-3 hrs | ❌ No |
-| **bge-base-en-v1.5** | **0.44 GB** | **512** | **768** | **~3-5 hrs** | **❌ No** |
-| bge-large-en-v1.5 | 1.34 GB | 512 | 1024 | ~5-7 hrs | ❌ No |
-| gte-base-en-v1.5 | 0.52 GB | 8192 | 768 | ~4-6 hrs | ✅ **YES** (blocked) |
 
 ## Original Architecture (for reference)
 
@@ -204,12 +153,6 @@ Before the attempted gte upgrade, the system used:
 - All worked fine, just wanted better embeddings
 
 We're keeping that clean architecture but upgrading to bge-base for better quality.
-
-## Questions to Ask User (if needed)
-
-1. Do they want to rebuild the index immediately or wait?
-2. Should we test the config in a dev environment first?
-3. Any specific chunking behavior they've noticed with the old bge-small?
 
 ## Known Issues to Watch For
 
@@ -226,8 +169,3 @@ We're keeping that clean architecture but upgrading to bge-base for better quali
 ✅ Chunking configured for 512 token context
 ✅ All scripts run without interactive prompts
 ✅ Ready to rebuild index with nohup
-
----
-
-**Last Updated**: 2025-11-29
-**Session ID**: 01TLReTfVknTkFyuURC7mZiS
