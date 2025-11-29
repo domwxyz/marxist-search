@@ -190,35 +190,16 @@ class SearchEngine:
         has_exact_phrases = bool(parsed_query.exact_phrases)
         has_title_phrases = bool(parsed_query.title_phrases)
 
-        # Determine if this is a pure phrase query (phrases but no semantic terms)
-        # These should fetch ALL matches and score semantically using phrase text
-        is_pure_phrase_query = (not has_semantic_terms) and (has_exact_phrases or has_title_phrases)
-
         # Use database search when there are no semantic terms to search for
-        # This handles: pure phrase queries, author-only, or combinations
+        # This handles: author-only, exact phrases, title phrases, or combinations
         if not has_semantic_terms:
             logger.info("Using database search (no semantic terms)")
-
-            # For pure phrase queries, get ALL matches (no limit) to score semantically
-            # For filter-only queries (author/source/date only), limit to 8000
-            search_limit = None if is_pure_phrase_query else 8000
-
             raw_results = self._search_database_for_phrases(
                 exact_phrases=parsed_query.exact_phrases,
                 title_phrases=parsed_query.title_phrases,
                 filters=filters,  # Pass filters to apply in SQL
-                limit=search_limit
+                limit=8000
             )
-
-            # For pure phrase queries, score ALL results semantically using phrase text
-            if is_pure_phrase_query:
-                semantic_query_for_scoring = parsed_query.get_semantic_query()
-                logger.info(
-                    f"Pure phrase query detected - scoring {len(raw_results)} results "
-                    f"semantically against: '{semantic_query_for_scoring}'"
-                )
-                raw_results = self._score_results_semantically(raw_results, semantic_query_for_scoring)
-
             # Filters already applied in SQL, but we still need regex for exact phrase word boundaries
             needs_exact_phrase_filter = has_exact_phrases
             needs_title_phrase_filter = has_title_phrases
@@ -595,7 +576,7 @@ class SearchEngine:
         exact_phrases: List[str] = None,
         title_phrases: List[str] = None,
         filters: Dict[str, Any] = None,
-        limit: Optional[int] = 8000
+        limit: int = 8000
     ) -> List[Dict]:
         """
         Search database directly for documents matching phrases and/or filters.
@@ -607,7 +588,7 @@ class SearchEngine:
             exact_phrases: Phrases that must appear in content or title
             title_phrases: Phrases that must appear in title only
             filters: Optional filters (author, source, date) to apply in SQL
-            limit: Maximum results (None for unlimited)
+            limit: Maximum results
 
         Returns:
             List of result dicts with metadata (no content yet)
@@ -676,7 +657,6 @@ class SearchEngine:
         
         where_clause = " AND ".join(conditions) if conditions else "1=1"
 
-        # Build query with optional LIMIT
         query = f"""
             SELECT
                 a.id as article_id,
@@ -695,13 +675,10 @@ class SearchEngine:
             FROM articles a
             WHERE {where_clause} AND a.indexed = 1
             ORDER BY a.published_date DESC
+            LIMIT ?
         """
 
-        # Only add LIMIT if specified
-        if limit is not None:
-            query += " LIMIT ?"
-            params.append(limit)
-
+        params.append(limit)
         cursor.execute(query, params)
         
         results = []
@@ -732,71 +709,6 @@ class SearchEngine:
         
         logger.info(f"Database search found {len(results)} matches (filters applied in SQL)")
         return results
-
-    def _score_results_semantically(
-        self,
-        results: List[Dict],
-        query: str
-    ) -> List[Dict]:
-        """
-        Score an arbitrary list of results semantically against a query.
-
-        This is used for pure phrase queries where we fetch ALL matching articles
-        from the database, then rank them by semantic relevance instead of by date.
-
-        Args:
-            results: List of results from database search (no scores yet)
-            query: Query string to score against
-
-        Returns:
-            Results with updated semantic scores, sorted by score descending
-        """
-        if not results or not query:
-            return results
-
-        logger.info(f"Scoring {len(results)} database results semantically against query: '{query}'")
-
-        # Fetch content for all results
-        results_with_content = self._enrich_with_content(results)
-
-        # Build list of texts to score (title + content for each result)
-        texts_to_score = []
-        result_indices = []  # Track which result each text belongs to
-
-        for i, result in enumerate(results_with_content):
-            title = result.get('title', '')
-            content = result.get('text', '')
-
-            # Combine title and content for scoring
-            full_text = f"{title} {content}".strip()
-
-            if full_text:
-                texts_to_score.append(full_text)
-                result_indices.append(i)
-
-        if not texts_to_score:
-            logger.warning("No content to score semantically")
-            return results
-
-        # Compute semantic similarity scores using txtai
-        # similarity() returns a list of scores in the same order as texts
-        try:
-            scores = self.embeddings.similarity(query, texts_to_score)
-            logger.debug(f"Computed {len(scores)} semantic similarity scores")
-        except Exception as e:
-            logger.error(f"Semantic scoring failed: {e}")
-            # Fall back to original results without semantic scores
-            return results
-
-        # Update scores in results
-        for score, result_idx in zip(scores, result_indices):
-            results_with_content[result_idx]['score'] = float(score)
-
-        # Sort by semantic score (descending)
-        sorted_results = sorted(results_with_content, key=lambda x: x.get('score', 0.0), reverse=True)
-
-        logger.info(f"Semantically scored and sorted {len(sorted_results)} results")
-        return sorted_results
 
     def _enrich_with_filter_metadata(self, results: List) -> List[Dict]:
         """
