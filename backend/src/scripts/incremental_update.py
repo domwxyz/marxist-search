@@ -40,8 +40,8 @@ logging.basicConfig(
     level=LOG_LEVEL,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('/var/log/news-search/ingestion.log')
-        if Path('/var/log/news-search').exists()
+        logging.FileHandler('/var/log/marxist-search/ingestion.log')
+        if Path('/var/log/marxist-search').exists()
         else logging.StreamHandler(),
         logging.StreamHandler()
     ]
