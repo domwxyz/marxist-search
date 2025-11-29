@@ -6,10 +6,9 @@
 #
 # This script rebuilds ONLY the search index from an existing database:
 # 1. Stops services
-# 2. Backs up existing index (optional)
-# 3. Removes old index
-# 4. Builds new search index from existing database (3-5 hours)
-# 5. Restarts services
+# 2. Removes old index
+# 3. Builds new search index from existing database (3-5 hours)
+# 4. Restarts services
 #
 # Use this when:
 # - Testing a new model
@@ -29,7 +28,6 @@ APP_DIR="/opt/marxist-search"
 DATA_DIR="/var/lib/marxist-search"
 LOG_DIR="/var/log/marxist-search"
 APP_USER="marxist"
-BACKUP_DIR="${DATA_DIR}/backups"
 
 # Colors for output
 RED='\033[0;31m'
@@ -89,27 +87,9 @@ if [ ! -f "$DATA_DIR/articles.db" ]; then
     exit 1
 fi
 
-# Banner
-clear
-echo -e "${CYAN}"
-cat << "EOF"
-╔═══════════════════════════════════════════════════════════════╗
-║                                                               ║
-║   MARXIST SEARCH ENGINE - INDEX REBUILD SCRIPT               ║
-║                                                               ║
-║   This will rebuild the search index from existing database. ║
-║   Estimated time: 3-5 hours                                  ║
-║                                                               ║
-╚═══════════════════════════════════════════════════════════════╝
-EOF
-echo -e "${NC}"
-echo ""
-
 log_info "Starting index rebuild process..."
 log_info "Application directory: $APP_DIR"
 log_info "Data directory: $DATA_DIR"
-log_info "Database: $DATA_DIR/articles.db"
-log_info "User: $APP_USER"
 echo ""
 
 # Check article count in database
@@ -117,28 +97,11 @@ ARTICLE_COUNT=$(sudo -u "$APP_USER" sqlite3 "$DATA_DIR/articles.db" "SELECT COUN
 log_info "Articles in database: $ARTICLE_COUNT"
 
 if [ "$ARTICLE_COUNT" -eq 0 ]; then
-    log_warning "Database has 0 articles! You may need to run the full rebuild: sudo ./rebuild_all.sh"
+    log_error "Database has 0 articles! Run the full rebuild first: sudo ./rebuild_all.sh"
+    exit 1
 fi
 
-# Prompt for backup (skip if running non-interactively with nohup)
-BACKUP_EXISTING="no"
-if [ -t 0 ]; then
-    # Running interactively
-    if [ -d "$DATA_DIR/txtai" ]; then
-        echo -e "${YELLOW}WARNING: Existing index found!${NC}"
-        read -p "Do you want to backup the existing index? (y/n): " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            BACKUP_EXISTING="yes"
-        fi
-    fi
-else
-    # Running non-interactively (e.g., with nohup)
-    log_info "Running non-interactively. Automatic backup will be created if index exists."
-    if [ -d "$DATA_DIR/txtai" ]; then
-        BACKUP_EXISTING="yes"
-    fi
-fi
+echo ""
 
 # ============================================================================
 # STEP 1: Stop services
@@ -162,35 +125,7 @@ else
 fi
 
 # ============================================================================
-# STEP 2: Backup existing index (if requested)
-# ============================================================================
-if [ "$BACKUP_EXISTING" = "yes" ]; then
-    log_step "Backing up existing index"
-
-    BACKUP_TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-    BACKUP_PATH="${BACKUP_DIR}/index_backup_${BACKUP_TIMESTAMP}"
-
-    log_info "Creating backup directory: $BACKUP_PATH"
-    mkdir -p "$BACKUP_PATH"
-
-    if [ -d "$DATA_DIR/txtai" ]; then
-        log_info "Backing up search index (this may take a while)..."
-        cp -r "$DATA_DIR/txtai" "$BACKUP_PATH/"
-        log_success "Search index backed up"
-    fi
-
-    chown -R "$APP_USER:$APP_USER" "$BACKUP_PATH"
-    log_success "Backup completed: $BACKUP_PATH"
-
-    # Clean up old backups (keep last 3)
-    log_info "Cleaning up old backups (keeping last 3)..."
-    cd "$BACKUP_DIR" 2>/dev/null || true
-    ls -t | grep "index_backup_" | tail -n +4 | xargs -r rm -rf
-    log_success "Old backups cleaned up"
-fi
-
-# ============================================================================
-# STEP 3: Remove old index
+# STEP 2: Remove old index
 # ============================================================================
 log_step "Removing old index"
 
@@ -207,7 +142,7 @@ mkdir -p "$DATA_DIR/txtai"
 chown -R "$APP_USER:$APP_USER" "$DATA_DIR"
 
 # ============================================================================
-# STEP 4: Build search index
+# STEP 3: Build search index
 # ============================================================================
 log_step "Building search index (this will take 3-5 hours)"
 
@@ -243,7 +178,7 @@ else
 fi
 
 # ============================================================================
-# STEP 5: Set permissions
+# STEP 4: Set permissions
 # ============================================================================
 log_step "Setting correct permissions"
 
@@ -251,7 +186,7 @@ chown -R "$APP_USER:$APP_USER" "$DATA_DIR/txtai"
 log_success "Permissions set"
 
 # ============================================================================
-# STEP 6: Start services
+# STEP 5: Start services
 # ============================================================================
 log_step "Starting services"
 
@@ -277,7 +212,7 @@ else
 fi
 
 # ============================================================================
-# STEP 7: Health check
+# STEP 6: Health check
 # ============================================================================
 log_step "Running health checks"
 
@@ -328,26 +263,18 @@ systemctl status marxist-search-api.service --no-pager -l | head -n 3
 systemctl status marxist-search-update.timer --no-pager -l | head -n 3
 echo ""
 echo -e "${CYAN}Next Steps:${NC}"
-echo "  1. Test the search functionality in your browser"
-echo "  2. Check the logs for any warnings or errors"
-echo "  3. Monitor the incremental updates (runs every 30 minutes)"
+echo "  1. Test search functionality: curl 'http://localhost:8000/api/v1/search?q=test'"
+echo "  2. Check logs for any warnings or errors"
+echo "  3. Monitor incremental updates (runs every 30 minutes)"
 echo ""
-echo -e "${CYAN}Useful Commands:${NC}"
-echo "  - View API logs:     tail -f $LOG_DIR/api.log"
-echo "  - View error logs:   tail -f $LOG_DIR/errors.log"
-echo "  - View service logs: journalctl -u marxist-search-api.service -f"
-echo "  - Check service:     systemctl status marxist-search-api.service"
-echo "  - Test search:       curl 'http://localhost:8000/api/v1/search?q=test'"
+echo -e "${CYAN}Logs:${NC}"
+echo "  - API logs:     tail -f $LOG_DIR/api.log"
+echo "  - Error logs:   tail -f $LOG_DIR/errors.log"
+echo "  - Service logs: journalctl -u marxist-search-api.service -f"
 echo ""
-if [ "$BACKUP_EXISTING" = "yes" ]; then
-    echo -e "${CYAN}Backup Location:${NC}"
-    echo "  $BACKUP_PATH"
-    echo ""
-fi
-echo -e "${CYAN}Data Locations:${NC}"
+echo -e "${CYAN}Data:${NC}"
 echo "  - Database:     $DATA_DIR/articles.db ($ARTICLE_COUNT articles)"
 echo "  - Search Index: $DATA_DIR/txtai/ ($INDEX_SIZE)"
-echo "  - Logs:         $LOG_DIR/"
 echo ""
 echo "========================================================================"
 echo ""
