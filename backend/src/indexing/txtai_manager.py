@@ -31,7 +31,8 @@ class TxtaiManager:
             "path": "Alibaba-NLP/gte-base-en-v1.5",
             "content": False,  # Disable content storage to avoid SQLite cursor recursion
             "keyword": False,  # DISABLED: BM25 incompatible with content=False during upsert
-            "backend": "numpy" # CPU-only exact search, no additional dependencies needed
+            "backend": "numpy", # CPU-only exact search, no additional dependencies needed
+            "trust_remote_code": True  # Required for Alibaba-NLP model custom code
             # With content=False, metadata is fetched from articles.db instead
             # This eliminates txtai's internal SQLite database and cursor conflicts
             # Note: keyword=False disables BM25 hybrid search to prevent index corruption

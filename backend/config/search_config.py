@@ -41,7 +41,9 @@ TXTAI_CONFIG = {
     # Use numpy backend instead of faiss to avoid nflip AttributeError
     # numpy provides CPU-only exact search without requiring additional dependencies
     # It's slower than FAISS for very large datasets but more reliable and already installed
-    "backend": "numpy"
+    "backend": "numpy",
+    # Required for Alibaba-NLP model to load custom code without interactive prompt
+    "trust_remote_code": True
 }
 
 # Chunking Configuration
