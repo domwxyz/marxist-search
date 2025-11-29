@@ -92,8 +92,18 @@ log_info "Application directory: $APP_DIR"
 log_info "Data directory: $DATA_DIR"
 echo ""
 
-# Check article count in database
-ARTICLE_COUNT=$(sudo -u "$APP_USER" sqlite3 "$DATA_DIR/articles.db" "SELECT COUNT(*) FROM articles;" 2>/dev/null || echo "0")
+# Check article count in database using Python (sqlite3 command may not be installed)
+ARTICLE_COUNT=$(cd "$APP_DIR/backend" && sudo -u "$APP_USER" ../venv/bin/python -c "
+import sqlite3
+try:
+    conn = sqlite3.connect('$DATA_DIR/articles.db')
+    count = conn.execute('SELECT COUNT(*) FROM articles').fetchone()[0]
+    conn.close()
+    print(count)
+except Exception as e:
+    print(0)
+" 2>/dev/null || echo "0")
+
 log_info "Articles in database: $ARTICLE_COUNT"
 
 if [ "$ARTICLE_COUNT" -eq 0 ]; then
