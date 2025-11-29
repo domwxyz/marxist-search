@@ -4,7 +4,7 @@ Content extraction from RSS entries and web pages.
 
 import asyncio
 from typing import Dict, Optional, Tuple
-from datetime import datetime
+from datetime import datetime, UTC
 import logging
 import re
 
@@ -111,7 +111,7 @@ class ContentExtractor:
                 'summary': summary,
                 'author': author,
                 'published_date': published_date,
-                'fetched_date': datetime.utcnow(),
+                'fetched_date': datetime.now(UTC),
                 'word_count': word_count,
                 'tags_json': tags,
             }
@@ -229,7 +229,7 @@ class ContentExtractor:
 
         # Last resort - use current time
         logger.warning(f"Could not parse date for entry, using current time")
-        return datetime.utcnow()
+        return datetime.now(UTC)
 
     def _extract_tags(self, entry: Dict) -> list:
         """
