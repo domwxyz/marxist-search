@@ -29,7 +29,7 @@ ANALYTICS_CONFIG = str(CONFIG_DIR / "analytics_config.json")
 
 # txtai Configuration
 TXTAI_CONFIG = {
-    "path": "BAAI/bge-small-en-v1.5",
+    "path": "Alibaba-NLP/gte-base-en-v1.5",
     # Disable content storage to avoid SQLite cursor recursion errors
     # Content is fetched from articles.db instead during result formatting
     # This eliminates txtai's internal SQLite database entirely
@@ -46,9 +46,9 @@ TXTAI_CONFIG = {
 
 # Chunking Configuration
 CHUNKING_CONFIG = {
-    "threshold_words": 3500,
-    "chunk_size_words": 1000,
-    "overlap_words": 200,
+    "threshold_words": 5500,  # Model handles ~6000 words
+    "chunk_size_words": 2000,  # Larger chunks now useful
+    "overlap_words": 300,      # ~15% overlap
     "prefer_section_breaks": True,
     "section_markers": ["##", "###", "\n\n"]
 }

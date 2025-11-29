@@ -17,10 +17,11 @@ from txtai.embeddings import Embeddings
 from .filters import SearchFilters
 from .query_parser import QueryParser, ParsedQuery
 from ..ingestion.term_extractor import TermExtractor
+from ..common.id_utils import parse_txtai_id, extract_article_id
 from config.search_config import (
-    SEARCH_CONFIG, 
-    INDEX_PATH, 
-    DATABASE_PATH, 
+    SEARCH_CONFIG,
+    INDEX_PATH,
+    DATABASE_PATH,
     TERMS_CONFIG,
     RERANKING_CONFIG
 )
@@ -726,63 +727,112 @@ class SearchEngine:
         enriched = []
 
         # With content=False, txtai returns tuples: (id, score)
-        # Extract IDs and create score mapping
-        txtai_ids = [r[0] for r in results]  # r[0] is the id
+        # IDs are now strings like "a_12345" or "c_12345_0"
+        txtai_ids = [r[0] for r in results]  # r[0] is the string id
         score_map = {r[0]: r[1] for r in results}  # r[0]=id, r[1]=score
+
+        # Parse IDs to determine what to fetch
+        article_ids = set()
+        chunk_lookups = []  # List of (article_id, chunk_index) tuples
+
+        for txtai_id in txtai_ids:
+            parsed = parse_txtai_id(txtai_id)
+            if parsed.type == 'article':
+                article_ids.add(parsed.article_id)
+            else:  # chunk
+                chunk_lookups.append((parsed.article_id, parsed.chunk_index))
 
         cursor = self.db_conn.cursor()
 
-        # Create placeholders for SQL IN clause
-        placeholders = ','.join('?' * len(txtai_ids))
+        # Fetch article metadata for non-chunked articles
+        if article_ids:
+            placeholders = ','.join('?' * len(article_ids))
+            query = f"""
+                SELECT
+                    a.id as article_id,
+                    a.title,
+                    a.url,
+                    a.source,
+                    a.author,
+                    a.published_date,
+                    a.word_count,
+                    a.terms_json as terms,
+                    a.tags_json as tags,
+                    CAST(strftime('%Y', a.published_date) AS INTEGER) as published_year,
+                    CAST(strftime('%m', a.published_date) AS INTEGER) as published_month
+                FROM articles a
+                WHERE a.id IN ({placeholders})
+            """
+            cursor.execute(query, list(article_ids))
 
-        # Fetch ONLY metadata needed for filtering (no content!)
-        # This is much faster than fetching full article text
-        query = f"""
-            SELECT
-                a.id as article_id,
-                a.title,
-                a.url,
-                a.source,
-                a.author,
-                a.published_date,
-                a.word_count,
-                a.terms_json as terms,
-                a.tags_json as tags,
-                CAST(strftime('%Y', a.published_date) AS INTEGER) as published_year,
-                CAST(strftime('%m', a.published_date) AS INTEGER) as published_month,
-                CASE
-                    WHEN ac.id IS NOT NULL THEN 1
-                    ELSE 0
-                END as is_chunk,
-                COALESCE(ac.chunk_index, 0) as chunk_index,
-                COALESCE(ac.id, a.id) as id
-            FROM articles a
-            LEFT JOIN article_chunks ac ON ac.article_id = a.id
-            WHERE a.id IN ({placeholders}) OR ac.id IN ({placeholders})
-        """
+            for row in cursor.fetchall():
+                txtai_id = f"a_{row['article_id']}"
+                result = {
+                    'id': txtai_id,
+                    'article_id': row['article_id'],
+                    'title': row['title'],
+                    'url': row['url'],
+                    'source': row['source'],
+                    'author': row['author'],
+                    'published_date': row['published_date'],
+                    'published_year': row['published_year'],
+                    'published_month': row['published_month'],
+                    'word_count': row['word_count'],
+                    'is_chunk': False,
+                    'chunk_index': 0,
+                    'tags': row['tags'],
+                    'terms': row['terms'],
+                    'score': score_map.get(txtai_id, 0.0),
+                    'text': None  # No content yet - will be fetched later if needed
+                }
+                enriched.append(result)
 
-        cursor.execute(query, txtai_ids + txtai_ids)
+        # Fetch chunk metadata
+        if chunk_lookups:
+            # Query chunks with their parent article metadata
+            for article_id, chunk_index in chunk_lookups:
+                query = """
+                    SELECT
+                        a.id as article_id,
+                        a.title,
+                        a.url,
+                        a.source,
+                        a.author,
+                        a.published_date,
+                        CAST(strftime('%Y', a.published_date) AS INTEGER) as published_year,
+                        CAST(strftime('%m', a.published_date) AS INTEGER) as published_month,
+                        a.terms_json as terms,
+                        a.tags_json as tags,
+                        ac.word_count,
+                        ac.chunk_index
+                    FROM articles a
+                    JOIN article_chunks ac ON ac.article_id = a.id
+                    WHERE a.id = ? AND ac.chunk_index = ?
+                """
+                cursor.execute(query, (article_id, chunk_index))
+                row = cursor.fetchone()
 
-        for row in cursor.fetchall():
-            result = {
-                'id': row['id'],
-                'article_id': row['article_id'],
-                'title': row['title'],
-                'url': row['url'],
-                'source': row['source'],
-                'author': row['author'],
-                'published_date': row['published_date'],
-                'published_year': row['published_year'],
-                'published_month': row['published_month'],
-                'word_count': row['word_count'],
-                'is_chunk': row['is_chunk'],
-                'chunk_index': row['chunk_index'],
-                'tags': row['tags'],
-                'terms': row['terms'],
-                'score': score_map.get(row['id'], 0.0),
-                'text': None  # No content yet - will be fetched later if needed
-            }
-            enriched.append(result)
+                if row:
+                    txtai_id = f"c_{article_id}_{chunk_index}"
+                    result = {
+                        'id': txtai_id,
+                        'article_id': row['article_id'],
+                        'title': row['title'],
+                        'url': row['url'],
+                        'source': row['source'],
+                        'author': row['author'],
+                        'published_date': row['published_date'],
+                        'published_year': row['published_year'],
+                        'published_month': row['published_month'],
+                        'word_count': row['word_count'],
+                        'is_chunk': True,
+                        'chunk_index': row['chunk_index'],
+                        'tags': row['tags'],
+                        'terms': row['terms'],
+                        'score': score_map.get(txtai_id, 0.0),
+                        'text': None  # No content yet - will be fetched later if needed
+                    }
+                    enriched.append(result)
 
         logger.debug(f"Enriched {len(enriched)} results with filter metadata (no content)")
 
@@ -807,28 +857,50 @@ class SearchEngine:
 
         self.connect_db()
 
-        # Get IDs we need to fetch content for
-        result_ids = [r['id'] for r in results]
+        # Parse IDs to determine what to fetch
+        article_ids = set()
+        chunk_lookups = []  # List of (txtai_id, article_id, chunk_index) tuples
+
+        for result in results:
+            txtai_id = result.get('id')
+            if not txtai_id:
+                continue
+
+            parsed = parse_txtai_id(txtai_id)
+            if parsed.type == 'article':
+                article_ids.add(parsed.article_id)
+            else:  # chunk
+                chunk_lookups.append((txtai_id, parsed.article_id, parsed.chunk_index))
 
         cursor = self.db_conn.cursor()
-        placeholders = ','.join('?' * len(result_ids))
-
-        # Fetch ONLY content for these specific IDs
-        query = f"""
-            SELECT
-                COALESCE(ac.id, a.id) as id,
-                COALESCE(ac.content, a.content) as text
-            FROM articles a
-            LEFT JOIN article_chunks ac ON ac.article_id = a.id
-            WHERE a.id IN ({placeholders}) OR ac.id IN ({placeholders})
-        """
-
-        cursor.execute(query, result_ids + result_ids)
-
-        # Create a map of id -> content
         content_map = {}
-        for row in cursor.fetchall():
-            content_map[row['id']] = row['text']
+
+        # Fetch content for non-chunked articles
+        if article_ids:
+            placeholders = ','.join('?' * len(article_ids))
+            query = f"""
+                SELECT id, content as text
+                FROM articles
+                WHERE id IN ({placeholders})
+            """
+            cursor.execute(query, list(article_ids))
+
+            for row in cursor.fetchall():
+                txtai_id = f"a_{row['id']}"
+                content_map[txtai_id] = row['text']
+
+        # Fetch content for chunks
+        for txtai_id, article_id, chunk_index in chunk_lookups:
+            query = """
+                SELECT content as text
+                FROM article_chunks
+                WHERE article_id = ? AND chunk_index = ?
+            """
+            cursor.execute(query, (article_id, chunk_index))
+            row = cursor.fetchone()
+
+            if row:
+                content_map[txtai_id] = row['text']
 
         # Add content to results
         for result in results:
@@ -848,9 +920,15 @@ class SearchEngine:
         """
         article_groups = defaultdict(list)
 
-        # Group results by article_id
+        # Group results by article_id (extract from string ID)
         for result in results:
-            article_id = result.get('article_id', result.get('id'))
+            # Extract article_id from string txtai ID
+            txtai_id = result.get('id')
+            if txtai_id and isinstance(txtai_id, str):
+                article_id = extract_article_id(txtai_id)
+            else:
+                # Fallback to article_id field if available
+                article_id = result.get('article_id', result.get('id'))
             article_groups[article_id].append(result)
 
         deduplicated = []
@@ -1367,31 +1445,53 @@ class SearchEngine:
 
         self.connect_db()
 
-        # Get content for all results (we need it to check exact matches)
-        result_ids = [r['id'] for r in results]
+        # Parse IDs to determine what to fetch
+        article_ids = set()
+        chunk_lookups = []  # List of (txtai_id, article_id, chunk_index) tuples
+
+        for result in results:
+            txtai_id = result.get('id')
+            if not txtai_id:
+                continue
+
+            parsed = parse_txtai_id(txtai_id)
+            if parsed.type == 'article':
+                article_ids.add(parsed.article_id)
+            else:  # chunk
+                chunk_lookups.append((txtai_id, parsed.article_id, parsed.chunk_index))
 
         cursor = self.db_conn.cursor()
-        placeholders = ','.join('?' * len(result_ids))
-
-        # Fetch content for all results
-        # Security: Using parameterized query, safe from injection
-        query = f"""
-            SELECT
-                COALESCE(ac.id, a.id) as id,
-                COALESCE(ac.content, a.content) as content,
-                a.title as title
-            FROM articles a
-            LEFT JOIN article_chunks ac ON ac.article_id = a.id
-            WHERE a.id IN ({placeholders}) OR ac.id IN ({placeholders})
-        """
-
-        cursor.execute(query, result_ids + result_ids)
-
-        # Build content map: combine title and content for searching
         content_map = {}
-        for row in cursor.fetchall():
-            full_text = f"{row['title'] or ''} {row['content'] or ''}"
-            content_map[row['id']] = full_text.lower()
+
+        # Fetch content for non-chunked articles
+        if article_ids:
+            placeholders = ','.join('?' * len(article_ids))
+            query = f"""
+                SELECT id, title, content
+                FROM articles
+                WHERE id IN ({placeholders})
+            """
+            cursor.execute(query, list(article_ids))
+
+            for row in cursor.fetchall():
+                txtai_id = f"a_{row['id']}"
+                full_text = f"{row['title'] or ''} {row['content'] or ''}"
+                content_map[txtai_id] = full_text.lower()
+
+        # Fetch content for chunks
+        for txtai_id, article_id, chunk_index in chunk_lookups:
+            query = """
+                SELECT a.title, ac.content
+                FROM articles a
+                JOIN article_chunks ac ON ac.article_id = a.id
+                WHERE a.id = ? AND ac.chunk_index = ?
+            """
+            cursor.execute(query, (article_id, chunk_index))
+            row = cursor.fetchone()
+
+            if row:
+                full_text = f"{row['title'] or ''} {row['content'] or ''}"
+                content_map[txtai_id] = full_text.lower()
 
         # Filter results that contain ALL exact phrases (whole-word matching)
         filtered = []

@@ -12,6 +12,7 @@ import logging
 from .chunking import ArticleChunker
 from .txtai_manager import TxtaiManager
 from ..ingestion.database import Database
+from ..common.id_utils import make_article_id, make_chunk_id
 from config.search_config import TITLE_WEIGHT_MULTIPLIER
 
 logger = logging.getLogger("indexing")
@@ -109,7 +110,6 @@ class IndexingService:
         }
 
         all_documents = []
-        next_chunk_id = len(articles) + 1  # Start chunk IDs after article IDs
 
         for article in articles:
             stats['articles_processed'] += 1
@@ -131,13 +131,8 @@ class IndexingService:
 
                     # Add chunks to documents for indexing
                     for chunk in chunks:
-                        chunk_doc = self._prepare_chunk_document(
-                            chunk,
-                            article,
-                            next_chunk_id
-                        )
+                        chunk_doc = self._prepare_chunk_document(chunk, article)
                         all_documents.append(chunk_doc)
-                        next_chunk_id += 1
                 else:
                     # Chunking failed, index article normally
                     article_doc = self._prepare_article_document(article)
@@ -220,9 +215,6 @@ class IndexingService:
 
         all_documents = []
 
-        # Get next available chunk ID
-        next_chunk_id = self._get_next_chunk_id()
-
         for article in articles:
             stats['articles_processed'] += 1
 
@@ -243,13 +235,8 @@ class IndexingService:
 
                     # Add chunks to documents for indexing
                     for chunk in chunks:
-                        chunk_doc = self._prepare_chunk_document(
-                            chunk,
-                            article,
-                            next_chunk_id
-                        )
+                        chunk_doc = self._prepare_chunk_document(chunk, article)
                         all_documents.append(chunk_doc)
-                        next_chunk_id += 1
                 else:
                     # Chunking failed, index article normally
                     article_doc = self._prepare_article_document(article)
@@ -347,26 +334,6 @@ class IndexingService:
 
         return articles
 
-    def _get_next_chunk_id(self) -> int:
-        """
-        Get the next available chunk ID.
-
-        Returns:
-            Next chunk ID to use
-        """
-        conn = self.db.connect()
-        cursor = conn.cursor()
-
-        # Get max article ID
-        cursor.execute("SELECT MAX(id) FROM articles")
-        max_article_id = cursor.fetchone()[0] or 0
-
-        # Get max chunk ID from article_chunks
-        cursor.execute("SELECT MAX(id) FROM article_chunks")
-        max_chunk_id = cursor.fetchone()[0] or 0
-
-        # Return next available ID
-        return max(max_article_id, max_chunk_id) + 1
 
     def _mark_specific_articles_indexed(self, article_ids: List[int]):
         """
@@ -478,7 +445,7 @@ class IndexingService:
         weighted_content = title_prefix + content
 
         return {
-            'id': article['id'],
+            'id': make_article_id(article['id']),
             'article_id': article['id'],
             'title': title,
             'content': weighted_content,  # Content with title prefix
@@ -498,8 +465,7 @@ class IndexingService:
     def _prepare_chunk_document(
         self,
         chunk: Dict,
-        article: Dict,
-        chunk_id: int
+        article: Dict
     ) -> Dict:
         """
         Prepare chunk for indexing.
@@ -511,7 +477,6 @@ class IndexingService:
         Args:
             chunk: Chunk dictionary
             article: Parent article dictionary
-            chunk_id: Unique ID for this chunk
 
         Returns:
             Document dictionary for txtai
@@ -529,7 +494,7 @@ class IndexingService:
             weighted_content = content
 
         return {
-            'id': chunk_id,
+            'id': make_chunk_id(article['id'], chunk_index),
             'article_id': article['id'],
             'title': title,
             'content': weighted_content,  # Title prefix only on first chunk
