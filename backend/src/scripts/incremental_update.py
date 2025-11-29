@@ -28,7 +28,8 @@ from config.search_config import (
     RSS_FEEDS_CONFIG,
     INDEX_PATH,
     TERMS_CONFIG,
-    LOG_LEVEL
+    LOG_LEVEL,
+    CHUNKING_CONFIG
 )
 from src.ingestion.archiving_service import run_update as run_archiving_update
 from src.ingestion.database import init_database
@@ -89,7 +90,10 @@ async def main():
             logger.info("\n--- STEP 2: Updating txtai index with new articles ---")
             index_stats = update_index(
                 db_path=DATABASE_PATH,
-                index_path=INDEX_PATH
+                index_path=INDEX_PATH,
+                chunk_threshold=CHUNKING_CONFIG['threshold_words'],
+                chunk_size=CHUNKING_CONFIG['chunk_size_words'],
+                overlap=CHUNKING_CONFIG['overlap_words']
             )
 
             if 'error' in index_stats:

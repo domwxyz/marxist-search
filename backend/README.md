@@ -8,7 +8,7 @@ The backend provides a complete pipeline from RSS feeds to searchable vector ind
 
 - **Ingestion**: RSS feed fetching with CMS-specific pagination, content extraction, text normalization
 - **Term Extraction**: Automatic extraction of Marxist terms with synonym and alias support
-- **Indexing**: Vector embeddings with BAAI/bge-small-en-v1.5, automatic chunking, txtai index management (content=False, no internal storage)
+- **Indexing**: Vector embeddings with Alibaba-NLP/gte-base-en-v1.5, automatic chunking, txtai index management (content=False, no internal storage)
 - **Search**: Pure semantic search with custom multi-signal reranking (title boost, keyword boost, recency boost), power-user syntax (exact phrases, title/author filters), filtering, and deduplication
 - **API**: FastAPI REST API with async request handling and thread pooling
 - **CLI**: Comprehensive command-line interface for all operations
@@ -18,7 +18,7 @@ The backend provides a complete pipeline from RSS feeds to searchable vector ind
 
 - **Python 3.11+**
 - **Web Framework**: FastAPI + uvicorn
-- **Vector Search**: txtai with BAAI/bge-small-en-v1.5 embeddings
+- **Vector Search**: txtai with Alibaba-NLP/gte-base-en-v1.5 embeddings
 - **Database**: SQLite with full-text search support
 - **Content Processing**: feedparser (RSS), trafilatura (web scraping)
 - **CLI**: Click + Rich (terminal formatting)
@@ -144,10 +144,10 @@ python -m src.cli.marxist_cli index info
 
 The indexing process:
 - Loads articles from database
-- Chunks long articles (>3500 words)
+- Chunks long articles (>5500 words)
 - Repeats titles 5x for weighting
-- Generates embeddings with bge-small-en-v1.5
-- Builds txtai index with hybrid search
+- Generates embeddings with gte-base-en-v1.5
+- Builds txtai index with pure semantic search
 
 ### Search Commands
 

@@ -33,7 +33,7 @@ from rich import print as rprint
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from config.search_config import DATABASE_PATH, RSS_FEEDS_CONFIG, INDEX_PATH, TERMS_CONFIG, LOG_LEVEL
+from config.search_config import DATABASE_PATH, RSS_FEEDS_CONFIG, INDEX_PATH, TERMS_CONFIG, LOG_LEVEL, CHUNKING_CONFIG
 from src.ingestion.archiving_service import run_archiving, ArchivingService, run_update as run_archiving_update
 from src.ingestion.database import init_database
 
@@ -296,8 +296,8 @@ def index_build(db_path, index_path, force):
 
     This will:
     1. Load articles from the database
-    2. Chunk long articles (>3500 words)
-    3. Generate embeddings using bge-small-en-v1.5
+    2. Chunk long articles (>5500 words)
+    3. Generate embeddings using gte-base-en-v1.5
     4. Build and save the txtai index
     """
     from src.indexing.indexing_service import build_index
@@ -305,7 +305,14 @@ def index_build(db_path, index_path, force):
     console.print("\n[bold cyan]Marxist Search - Index Building[/bold cyan]\n")
 
     try:
-        stats = build_index(db_path, index_path, force=force)
+        stats = build_index(
+            db_path,
+            index_path,
+            force=force,
+            chunk_threshold=CHUNKING_CONFIG['threshold_words'],
+            chunk_size=CHUNKING_CONFIG['chunk_size_words'],
+            overlap=CHUNKING_CONFIG['overlap_words']
+        )
 
         console.print("\n[bold green]Index Building Complete![/bold green]\n")
 
@@ -360,7 +367,13 @@ def index_update(db_path, index_path):
         ) as progress:
             task = progress.add_task("Updating index with new articles...", total=None)
 
-            stats = update_index(db_path, index_path)
+            stats = update_index(
+                db_path,
+                index_path,
+                chunk_threshold=CHUNKING_CONFIG['threshold_words'],
+                chunk_size=CHUNKING_CONFIG['chunk_size_words'],
+                overlap=CHUNKING_CONFIG['overlap_words']
+            )
 
             progress.remove_task(task)
 
