@@ -706,9 +706,13 @@ class SearchEngine:
         
         results = []
         for row in cursor.fetchall():
+            # Format ID as txtai string format for compatibility with _enrich_with_content()
+            article_id = row['article_id']
+            txtai_id = f"a_{article_id}"
+
             result = {
-                'id': row['id'],
-                'article_id': row['article_id'],
+                'id': txtai_id,
+                'article_id': article_id,
                 'title': row['title'],
                 'url': row['url'],
                 'source': row['source'],
