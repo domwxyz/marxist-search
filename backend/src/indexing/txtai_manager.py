@@ -8,6 +8,7 @@ import logging
 import json
 
 from txtai.embeddings import Embeddings
+from config.search_config import TXTAI_CONFIG
 
 logger = logging.getLogger(__name__)
 
@@ -21,28 +22,13 @@ class TxtaiManager:
 
         Args:
             index_path: Path to store/load the index
-            config: txtai configuration (uses default if None)
+            config: txtai configuration (uses TXTAI_CONFIG from search_config.py if None)
         """
         self.index_path = Path(index_path)
         self.index_path.mkdir(parents=True, exist_ok=True)
 
-        # Default configuration for txtai 7.x
-        # Prefer local model to avoid HuggingFace trust_remote_code interactive prompts
-        from pathlib import Path as P
-        local_model = P("/var/lib/marxist-search/models/gte-base-en-v1.5")
-        model_path = str(local_model) if local_model.exists() else "Alibaba-NLP/gte-base-en-v1.5"
-
-        self.config = config or {
-            "path": model_path,
-            "content": False,  # Disable content storage to avoid SQLite cursor recursion
-            "keyword": False,  # DISABLED: BM25 incompatible with content=False during upsert
-            "backend": "numpy", # CPU-only exact search, no additional dependencies needed
-            "trust_remote_code": True  # Required for Alibaba-NLP model custom code (if using HuggingFace)
-            # With content=False, metadata is fetched from articles.db instead
-            # This eliminates txtai's internal SQLite database and cursor conflicts
-            # Note: keyword=False disables BM25 hybrid search to prevent index corruption
-            # during incremental updates. Pure semantic search is used instead.
-        }
+        # Use config from search_config.py as default (single source of truth)
+        self.config = config or TXTAI_CONFIG
 
         self.embeddings: Optional[Embeddings] = None
 
