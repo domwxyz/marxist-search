@@ -8,6 +8,7 @@ import logging
 import json
 
 from txtai.embeddings import Embeddings
+from config.search_config import TXTAI_CONFIG
 
 logger = logging.getLogger(__name__)
 
@@ -26,17 +27,8 @@ class TxtaiManager:
         self.index_path = Path(index_path)
         self.index_path.mkdir(parents=True, exist_ok=True)
 
-        # Default configuration for txtai 7.x
-        self.config = config or {
-            "path": "BAAI/bge-small-en-v1.5",
-            "content": False,  # Disable content storage to avoid SQLite cursor recursion
-            "keyword": False,  # DISABLED: BM25 incompatible with content=False during upsert
-            "backend": "numpy" # CPU-only exact search, no additional dependencies needed
-            # With content=False, metadata is fetched from articles.db instead
-            # This eliminates txtai's internal SQLite database and cursor conflicts
-            # Note: keyword=False disables BM25 hybrid search to prevent index corruption
-            # during incremental updates. Pure semantic search is used instead.
-        }
+        # Use configuration from search_config.py (updated for nomic model)
+        self.config = config or TXTAI_CONFIG
 
         self.embeddings: Optional[Embeddings] = None
 
