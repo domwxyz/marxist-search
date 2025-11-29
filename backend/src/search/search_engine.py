@@ -228,11 +228,22 @@ class SearchEngine:
                     logger.warning(f"Query expansion failed: {e}")
 
             try:
+                # For pure phrase queries, use total index size as limit to ensure we get ALL matches
+                # that will be filtered for exact phrase. This ensures complete results while
+                # maintaining semantic relevance ranking.
+                if is_pure_phrase_query:
+                    # Get total documents in index
+                    total_docs = self.embeddings.count() if self.embeddings else 50000
+                    search_limit = total_docs
+                    logger.info(f"Pure phrase query: searching all {search_limit} documents for phrase matches")
+                else:
+                    search_limit = 8000
+
                 raw_results = self._execute_txtai_search(
                     query=semantic_query if semantic_query else query,
-                    limit=8000
+                    limit=search_limit
                 )
-                logger.debug(f"txtai returned {len(raw_results)} raw results")
+                logger.debug(f"txtai returned {len(raw_results)} raw results (limit={search_limit})")
             except Exception as e:
                 logger.error(f"Search failed: {e}")
                 raise
