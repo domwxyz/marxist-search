@@ -48,7 +48,7 @@ class SearchRequest(BaseModel):
 class SearchResult(BaseModel):
     """Individual search result."""
 
-    id: int = Field(..., description="Document ID")
+    id: str = Field(..., description="Document ID (e.g., 'a_12345' or 'c_12345_0')")
     article_id: int = Field(..., description="Article ID")
     title: str = Field(..., description="Article title")
     url: str = Field(..., description="Article URL")
