@@ -119,7 +119,7 @@ CONCURRENCY_CONFIG = {
 
 # Logging Configuration
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
-LOG_DIR = Path("/var/log/news-search") if os.path.exists("/var/log/news-search") else BASE_DIR / "logs"
+LOG_DIR = Path("/var/log/marxist-search") if os.path.exists("/var/log/marxist-search") else BASE_DIR / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 LOG_CONFIG = {

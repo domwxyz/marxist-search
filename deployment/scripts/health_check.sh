@@ -122,8 +122,8 @@ fi
 
 # Recent errors
 echo -e "${BLUE}Checking recent errors...${NC}"
-if [ -f "/var/log/news-search/errors.log" ]; then
-    ERROR_COUNT=$(tail -100 /var/log/news-search/errors.log 2>/dev/null | wc -l)
+if [ -f "/var/log/marxist-search/errors.log" ]; then
+    ERROR_COUNT=$(tail -100 /var/log/marxist-search/errors.log 2>/dev/null | wc -l)
     if [ "$ERROR_COUNT" -eq 0 ]; then
         echo -e "  ${GREEN}✓${NC} No recent errors"
     else
