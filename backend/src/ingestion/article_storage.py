@@ -5,7 +5,7 @@ Article storage module for saving articles to the database.
 import sqlite3
 import json
 from typing import List, Dict, Optional
-from datetime import datetime
+from datetime import datetime, UTC
 from pathlib import Path
 import logging
 
@@ -254,7 +254,7 @@ class ArticleStorage:
             cursor.execute("SELECT id, consecutive_failures FROM rss_feeds WHERE url = ?", (feed_url,))
             existing = cursor.fetchone()
 
-            now = datetime.utcnow()
+            now = datetime.now(UTC)
 
             if success:
                 # Reset consecutive failures on success

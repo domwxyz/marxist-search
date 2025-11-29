@@ -12,7 +12,7 @@ This module tracks:
 import json
 from pathlib import Path
 from typing import Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, UTC
 from collections import defaultdict
 import logging
 
@@ -90,9 +90,9 @@ class AnalyticsTracker:
                 }
             },
             "metadata": {
-                "last_updated": datetime.utcnow().isoformat() + "Z",
+                "last_updated": datetime.now(UTC).isoformat() + "Z",
                 "total_searches_tracked": 0,
-                "tracking_start_date": datetime.utcnow().isoformat()[:10]
+                "tracking_start_date": datetime.now(UTC).isoformat()[:10]
             }
         }
 
@@ -135,14 +135,14 @@ class AnalyticsTracker:
                     no_results.append({
                         'query': query,
                         'filters': filters,
-                        'timestamp': datetime.utcnow().isoformat() + "Z"
+                        'timestamp': datetime.now(UTC).isoformat() + "Z"
                     })
                 else:
                     no_results.pop(0)
                     no_results.append({
                         'query': query,
                         'filters': filters,
-                        'timestamp': datetime.utcnow().isoformat() + "Z"
+                        'timestamp': datetime.now(UTC).isoformat() + "Z"
                     })
 
             # Track term hits in results
@@ -152,7 +152,7 @@ class AnalyticsTracker:
             self._track_tag_distribution(results)
 
             # Track search volume by date
-            today = datetime.utcnow().isoformat()[:10]
+            today = datetime.now(UTC).isoformat()[:10]
             volume = self.analytics['tracking']['search_volume_by_date']
             volume[today] = volume.get(today, 0) + 1
 
@@ -312,7 +312,7 @@ class AnalyticsTracker:
         """Save analytics to file."""
         try:
             # Update last modified timestamp
-            self.analytics['metadata']['last_updated'] = datetime.utcnow().isoformat() + "Z"
+            self.analytics['metadata']['last_updated'] = datetime.now(UTC).isoformat() + "Z"
 
             # Ensure parent directory exists
             self.config_path.parent.mkdir(parents=True, exist_ok=True)

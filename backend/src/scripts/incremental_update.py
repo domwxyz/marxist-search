@@ -18,7 +18,7 @@ import asyncio
 import sys
 import logging
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, UTC
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -57,7 +57,7 @@ async def main():
     Returns:
         Exit code (0 for success, 1 for error)
     """
-    start_time = datetime.utcnow()
+    start_time = datetime.now(UTC)
     logger.info("=" * 80)
     logger.info("Starting incremental update process")
     logger.info(f"Timestamp: {start_time.isoformat()}")
@@ -109,7 +109,7 @@ async def main():
             logger.info("\n--- STEP 2: Skipped (no new articles to index) ---")
 
         # Calculate total duration
-        end_time = datetime.utcnow()
+        end_time = datetime.now(UTC)
         total_duration = (end_time - start_time).total_seconds()
 
         logger.info("\n" + "=" * 80)

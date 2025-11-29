@@ -8,7 +8,7 @@ import json
 import logging
 from pathlib import Path
 from typing import List, Dict, Optional
-from datetime import datetime
+from datetime import datetime, UTC
 
 from .rss_fetcher import RSSFetcher, load_feed_configs
 from .content_extractor import ContentExtractor
@@ -74,7 +74,7 @@ class ArchivingService:
             Statistics dictionary with results
         """
         logger.info("Starting archiving process for all feeds")
-        start_time = datetime.utcnow()
+        start_time = datetime.now(UTC)
 
         # Get list of enabled feeds
         feed_urls = list(self.feed_configs.keys())
@@ -147,7 +147,7 @@ class ArchivingService:
                        f"{save_stats['duplicates']} duplicates")
 
         # Calculate duration
-        end_time = datetime.utcnow()
+        end_time = datetime.now(UTC)
         duration = (end_time - start_time).total_seconds()
         total_stats['duration_seconds'] = duration
 
@@ -171,7 +171,7 @@ class ArchivingService:
             Statistics dictionary with results
         """
         logger.info("Starting incremental update for all feeds")
-        start_time = datetime.utcnow()
+        start_time = datetime.now(UTC)
 
         # Get list of enabled feeds
         feed_urls = list(self.feed_configs.keys())
@@ -260,7 +260,7 @@ class ArchivingService:
                        f"{save_stats['duplicates']} duplicates")
 
         # Calculate duration
-        end_time = datetime.utcnow()
+        end_time = datetime.now(UTC)
         duration = (end_time - start_time).total_seconds()
         total_stats['duration_seconds'] = duration
 
@@ -302,7 +302,7 @@ class ArchivingService:
 
         feed_name = self.feed_configs[feed_url].get('name', feed_url)
         logger.info(f"Starting archiving process for feed: {feed_name}")
-        start_time = datetime.utcnow()
+        start_time = datetime.now(UTC)
 
         # Fetch RSS entries
         entries = await self.rss_fetcher.fetch_rss_entries(feed_url)
@@ -345,7 +345,7 @@ class ArchivingService:
         self._update_feed_stats(feed_url, success=True)
 
         # Calculate duration
-        end_time = datetime.utcnow()
+        end_time = datetime.now(UTC)
         duration = (end_time - start_time).total_seconds()
 
         stats = {

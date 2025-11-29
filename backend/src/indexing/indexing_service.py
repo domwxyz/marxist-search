@@ -5,7 +5,7 @@ Indexing service that orchestrates chunking and embedding of articles.
 import sqlite3
 import json
 from typing import Dict, List
-from datetime import datetime
+from datetime import datetime, UTC
 from pathlib import Path
 import logging
 
@@ -71,7 +71,7 @@ class IndexingService:
         Returns:
             Statistics dictionary
         """
-        start_time = datetime.utcnow()
+        start_time = datetime.now(UTC)
 
         logger.info("Starting index building process...")
 
@@ -155,7 +155,7 @@ class IndexingService:
         self._mark_articles_indexed()
 
         # Calculate duration
-        end_time = datetime.utcnow()
+        end_time = datetime.now(UTC)
         stats['duration_seconds'] = (end_time - start_time).total_seconds()
 
         logger.info(f"Index building complete in {stats['duration_seconds']:.2f}s")
@@ -175,7 +175,7 @@ class IndexingService:
         Returns:
             Statistics dictionary
         """
-        start_time = datetime.utcnow()
+        start_time = datetime.now(UTC)
 
         logger.info("Starting incremental index update...")
 
@@ -257,7 +257,7 @@ class IndexingService:
         self._mark_specific_articles_indexed(article_ids)
 
         # Calculate duration
-        end_time = datetime.utcnow()
+        end_time = datetime.now(UTC)
         stats['duration_seconds'] = (end_time - start_time).total_seconds()
 
         logger.info(f"Incremental index update complete in {stats['duration_seconds']:.2f}s")
