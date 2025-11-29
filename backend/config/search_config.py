@@ -71,12 +71,49 @@ SEARCH_CONFIG = {
     }
 }
 
+# Semantic Score Filtering Configuration
+# Filters out semantically irrelevant results after txtai search
+# Uses statistical analysis of score distribution to determine cutoff
+SEMANTIC_FILTER_CONFIG = {
+    # Enable/disable semantic filtering
+    "enabled": True,
+
+    # Filtering strategy: "statistical", "percentile", "fixed", or "hybrid"
+    "strategy": "hybrid",
+
+    # Hybrid strategy settings (recommended)
+    # Threshold = max(min_absolute_threshold, mean - std_multiplier * std_dev)
+    "hybrid": {
+        "min_absolute_threshold": 0.35,    # Never keep results below this score
+        "std_multiplier": 1.5,             # How many std devs below mean to cut off
+        "use_median": False,               # Use median instead of mean (more robust to outliers)
+    },
+
+    # Statistical strategy settings
+    # Threshold = mean - std_multiplier * std_dev
+    "statistical": {
+        "std_multiplier": 1.5,             # Standard deviations below mean
+        "use_median": False,               # Use median instead of mean
+    },
+
+    # Percentile strategy settings
+    # Keep only top N% of results
+    "percentile": {
+        "keep_top_percent": 30,            # Keep top 30% of results by score
+    },
+
+    # Fixed threshold strategy
+    "fixed": {
+        "min_score": 0.5,                  # Minimum score to keep
+    },
+}
+
 # Reranking Configuration
 # Applied after semantic search to boost results with query term matches
 RERANKING_CONFIG = {
     # Title term boost: rewards results where query terms appear in title
     "title_boost_max": 0.08,           # Maximum boost when all query terms in title
-    
+
     # Keyword frequency boost: pseudo-BM25 on top candidates
     "keyword_boost_max": 0.06,         # Maximum keyword frequency boost
     "keyword_boost_scale": 0.02,       # Scaling factor for log TF score
