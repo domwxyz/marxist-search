@@ -225,7 +225,7 @@ log_step "Initializing database"
 
 cd "$APP_DIR/backend"
 log_info "Running database initialization..."
-sudo -u "$APP_USER" DATA_DIR="$DATA_DIR" venv/bin/python -m src.cli.marxist_cli init-db
+sudo -u "$APP_USER" DATA_DIR="$DATA_DIR" ../venv/bin/python -m src.cli.marxist_cli init-db
 log_success "Database initialized"
 
 # ============================================================================
@@ -237,7 +237,7 @@ START_TIME=$(date +%s)
 log_info "Starting full archive run..."
 log_info "This will fetch all historical articles from RSS feeds"
 
-sudo -u "$APP_USER" DATA_DIR="$DATA_DIR" venv/bin/python -m src.cli.marxist_cli archive run
+sudo -u "$APP_USER" DATA_DIR="$DATA_DIR" ../venv/bin/python -m src.cli.marxist_cli archive run
 
 END_TIME=$(date +%s)
 DURATION=$((END_TIME - START_TIME))
@@ -245,7 +245,7 @@ MINUTES=$((DURATION / 60))
 log_success "Archive completed in $MINUTES minutes"
 
 # Check article count
-ARTICLE_COUNT=$(sudo -u "$APP_USER" DATA_DIR="$DATA_DIR" venv/bin/python -c "
+ARTICLE_COUNT=$(sudo -u "$APP_USER" DATA_DIR="$DATA_DIR" ../venv/bin/python -c "
 import sqlite3
 conn = sqlite3.connect('$DATA_DIR/articles.db')
 count = conn.execute('SELECT COUNT(*) FROM articles').fetchone()[0]
@@ -270,7 +270,7 @@ log_info "Starting index build..."
 log_info "This will create vector embeddings for all articles"
 log_info "Progress will be logged below..."
 
-sudo -u "$APP_USER" DATA_DIR="$DATA_DIR" venv/bin/python -m src.cli.marxist_cli index build
+sudo -u "$APP_USER" DATA_DIR="$DATA_DIR" ../venv/bin/python -m src.cli.marxist_cli index build
 
 END_TIME=$(date +%s)
 DURATION=$((END_TIME - START_TIME))
