@@ -27,12 +27,17 @@ class TxtaiManager:
         self.index_path.mkdir(parents=True, exist_ok=True)
 
         # Default configuration for txtai 7.x
+        # Prefer local model to avoid HuggingFace trust_remote_code interactive prompts
+        from pathlib import Path as P
+        local_model = P("/var/lib/marxist-search/models/gte-base-en-v1.5")
+        model_path = str(local_model) if local_model.exists() else "Alibaba-NLP/gte-base-en-v1.5"
+
         self.config = config or {
-            "path": "Alibaba-NLP/gte-base-en-v1.5",
+            "path": model_path,
             "content": False,  # Disable content storage to avoid SQLite cursor recursion
             "keyword": False,  # DISABLED: BM25 incompatible with content=False during upsert
             "backend": "numpy", # CPU-only exact search, no additional dependencies needed
-            "trust_remote_code": True  # Required for Alibaba-NLP model custom code
+            "trust_remote_code": True  # Required for Alibaba-NLP model custom code (if using HuggingFace)
             # With content=False, metadata is fetched from articles.db instead
             # This eliminates txtai's internal SQLite database and cursor conflicts
             # Note: keyword=False disables BM25 hybrid search to prevent index corruption

@@ -28,8 +28,14 @@ TERMS_CONFIG = str(CONFIG_DIR / "terms_config.json")
 ANALYTICS_CONFIG = str(CONFIG_DIR / "analytics_config.json")
 
 # txtai Configuration
+# Model path: Use local model directory to avoid HuggingFace trust_remote_code prompts
+# Download model first: sudo /opt/marxist-search/deployment/scripts/download_model.sh
+# If local model not found, falls back to HuggingFace (may prompt for trust_remote_code)
+LOCAL_MODEL_PATH = Path("/var/lib/marxist-search/models/gte-base-en-v1.5")
+MODEL_PATH = str(LOCAL_MODEL_PATH) if LOCAL_MODEL_PATH.exists() else "Alibaba-NLP/gte-base-en-v1.5"
+
 TXTAI_CONFIG = {
-    "path": "Alibaba-NLP/gte-base-en-v1.5",
+    "path": MODEL_PATH,
     # Disable content storage to avoid SQLite cursor recursion errors
     # Content is fetched from articles.db instead during result formatting
     # This eliminates txtai's internal SQLite database entirely
@@ -43,6 +49,7 @@ TXTAI_CONFIG = {
     # It's slower than FAISS for very large datasets but more reliable and already installed
     "backend": "numpy",
     # Required for Alibaba-NLP model to load custom code without interactive prompt
+    # Only needed if using HuggingFace Hub (not needed for local models)
     "trust_remote_code": True
 }
 
