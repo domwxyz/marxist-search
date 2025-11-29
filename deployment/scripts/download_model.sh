@@ -49,11 +49,11 @@ print(f"To: {local_dir}")
 print("")
 
 # Download all model files
+# Note: trust_remote_code is not needed for downloading, only for loading
 snapshot_download(
     repo_id=model_name,
     local_dir=local_dir,
-    local_dir_use_symlinks=False,
-    trust_remote_code=True  # Only needed for initial download
+    local_dir_use_symlinks=False
 )
 
 print("")
