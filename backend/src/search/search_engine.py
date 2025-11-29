@@ -23,7 +23,8 @@ from config.search_config import (
     INDEX_PATH,
     DATABASE_PATH,
     TERMS_CONFIG,
-    RERANKING_CONFIG
+    RERANKING_CONFIG,
+    SEMANTIC_FILTER_CONFIG
 )
 
 logger = logging.getLogger('search')
@@ -227,6 +228,10 @@ class SearchEngine:
             except Exception as e:
                 logger.error(f"Search failed: {e}")
                 raise
+
+            # Apply semantic score filtering to remove irrelevant results
+            # This filters based on statistical analysis of the score distribution
+            raw_results = self._filter_by_semantic_score(raw_results)
 
             needs_exact_phrase_filter = has_exact_phrases
             needs_title_phrase_filter = has_title_phrases
@@ -570,7 +575,109 @@ class SearchEngine:
         enriched_results = self._enrich_with_filter_metadata(results)
 
         return enriched_results
-        
+
+    def _filter_by_semantic_score(self, results: List[Dict]) -> List[Dict]:
+        """
+        Filter results based on semantic similarity scores using statistical analysis.
+
+        Uses configurable strategies to determine score cutoff:
+        - hybrid: max(min_threshold, mean - k*std) - adapts to query but has a floor
+        - statistical: mean - k*std - purely statistical
+        - percentile: keep top N% of results
+        - fixed: simple threshold
+
+        This removes semantically irrelevant results that txtai returns just because
+        the limit is 8000, even though they may have very low similarity scores.
+
+        Args:
+            results: Results with 'score' field from txtai
+
+        Returns:
+            Filtered results with semantically irrelevant ones removed
+        """
+        if not results:
+            return []
+
+        # Check if filtering is enabled
+        if not SEMANTIC_FILTER_CONFIG.get('enabled', False):
+            return results
+
+        strategy = SEMANTIC_FILTER_CONFIG.get('strategy', 'hybrid')
+
+        # Extract scores for statistical analysis
+        scores = [r.get('score', 0.0) for r in results]
+
+        if not scores:
+            return results
+
+        # Calculate statistics
+        import statistics
+        mean_score = statistics.mean(scores)
+        std_dev = statistics.stdev(scores) if len(scores) > 1 else 0.0
+        median_score = statistics.median(scores)
+
+        # Determine threshold based on strategy
+        threshold = 0.0
+
+        if strategy == 'hybrid':
+            config = SEMANTIC_FILTER_CONFIG['hybrid']
+            min_threshold = config.get('min_absolute_threshold', 0.35)
+            std_multiplier = config.get('std_multiplier', 1.5)
+            use_median = config.get('use_median', False)
+
+            center = median_score if use_median else mean_score
+            statistical_threshold = center - (std_multiplier * std_dev)
+            threshold = max(min_threshold, statistical_threshold)
+
+            logger.info(
+                f"Hybrid score filtering: mean={mean_score:.3f}, median={median_score:.3f}, "
+                f"std={std_dev:.3f}, statistical_threshold={statistical_threshold:.3f}, "
+                f"final_threshold={threshold:.3f}"
+            )
+
+        elif strategy == 'statistical':
+            config = SEMANTIC_FILTER_CONFIG['statistical']
+            std_multiplier = config.get('std_multiplier', 1.5)
+            use_median = config.get('use_median', False)
+
+            center = median_score if use_median else mean_score
+            threshold = center - (std_multiplier * std_dev)
+
+            logger.info(
+                f"Statistical score filtering: center={center:.3f}, std={std_dev:.3f}, "
+                f"threshold={threshold:.3f}"
+            )
+
+        elif strategy == 'percentile':
+            config = SEMANTIC_FILTER_CONFIG['percentile']
+            keep_percent = config.get('keep_top_percent', 30)
+
+            # Calculate percentile threshold
+            sorted_scores = sorted(scores, reverse=True)
+            cutoff_index = int(len(sorted_scores) * (keep_percent / 100.0))
+            threshold = sorted_scores[min(cutoff_index, len(sorted_scores) - 1)]
+
+            logger.info(
+                f"Percentile score filtering: keeping top {keep_percent}%, "
+                f"threshold={threshold:.3f}"
+            )
+
+        elif strategy == 'fixed':
+            config = SEMANTIC_FILTER_CONFIG['fixed']
+            threshold = config.get('min_score', 0.5)
+
+            logger.info(f"Fixed score filtering: threshold={threshold:.3f}")
+
+        # Filter results
+        filtered = [r for r in results if r.get('score', 0.0) >= threshold]
+
+        logger.info(
+            f"Semantic score filtering removed {len(results) - len(filtered)} results "
+            f"({len(filtered)}/{len(results)} kept, threshold={threshold:.3f})"
+        )
+
+        return filtered
+
     def _search_database_for_phrases(
         self,
         exact_phrases: List[str] = None,
