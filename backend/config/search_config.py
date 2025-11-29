@@ -84,8 +84,8 @@ SEMANTIC_FILTER_CONFIG = {
     # Hybrid strategy settings (recommended)
     # Threshold = max(min_absolute_threshold, mean - std_multiplier * std_dev)
     "hybrid": {
-        "min_absolute_threshold": 0.35,    # Never keep results below this score
-        "std_multiplier": 1.5,             # How many std devs below mean to cut off
+        "min_absolute_threshold": 0.52,    # Never keep results below this score
+        "std_multiplier": 2.0,             # How many std devs below mean to cut off
         "use_median": False,               # Use median instead of mean (more robust to outliers)
     },
 
