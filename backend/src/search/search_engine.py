@@ -190,35 +190,26 @@ class SearchEngine:
         has_exact_phrases = bool(parsed_query.exact_phrases)
         has_title_phrases = bool(parsed_query.title_phrases)
 
-        # Determine if this is a pure phrase query (phrases but no semantic terms)
-        # These should use semantic search with the phrase as query for relevance ranking
-        is_pure_phrase_query = (not has_semantic_terms) and (has_exact_phrases or has_title_phrases)
-
-        # Check if this is a filter-only query (no searchable content at all)
-        is_filter_only = not has_semantic_terms and not has_exact_phrases and not has_title_phrases
-
-        # Use database search ONLY for filter-only queries (author/source/date only)
-        # For pure phrase queries, use semantic search for better performance
-        if is_filter_only:
-            logger.info("Using database search (filter-only query)")
+        # Use database search when there are no semantic terms to search for
+        # This handles: author-only, exact phrases, title phrases, or combinations
+        if not has_semantic_terms:
+            logger.info("Using database search (no semantic terms)")
             raw_results = self._search_database_for_phrases(
-                exact_phrases=None,
-                title_phrases=None,
-                filters=filters,
+                exact_phrases=parsed_query.exact_phrases,
+                title_phrases=parsed_query.title_phrases,
+                filters=filters,  # Pass filters to apply in SQL
                 limit=8000
             )
-            # Filters already applied in SQL
-            filtered_results = raw_results
-            needs_exact_phrase_filter = False
-            needs_title_phrase_filter = False
-        else:
-            # Semantic search for all other queries (semantic terms, pure phrases, or combined)
-            # For pure phrase queries, semantic_query contains the phrase text
-            if is_pure_phrase_query:
-                logger.info(f"Pure phrase query - using semantic search with: '{semantic_query}'")
+            # Filters already applied in SQL, but we still need regex for exact phrase word boundaries
+            needs_exact_phrase_filter = has_exact_phrases
+            needs_title_phrase_filter = has_title_phrases
 
-            # Optionally expand with synonyms (but not for pure phrase queries)
-            if self.enable_query_expansion and self.term_extractor and semantic_query and not is_pure_phrase_query:
+            # Skip Python filter application since SQL already handled it
+            filtered_results = raw_results
+        else:
+            # Semantic search for queries with semantic terms
+            # Optionally expand with synonyms
+            if self.enable_query_expansion and self.term_extractor and semantic_query:
                 try:
                     expanded = self._expand_query(semantic_query)
                     if expanded != semantic_query:
@@ -228,22 +219,11 @@ class SearchEngine:
                     logger.warning(f"Query expansion failed: {e}")
 
             try:
-                # For pure phrase queries, use total index size as limit to ensure we get ALL matches
-                # that will be filtered for exact phrase. This ensures complete results while
-                # maintaining semantic relevance ranking.
-                if is_pure_phrase_query:
-                    # Get total documents in index
-                    total_docs = self.embeddings.count() if self.embeddings else 50000
-                    search_limit = total_docs
-                    logger.info(f"Pure phrase query: searching all {search_limit} documents for phrase matches")
-                else:
-                    search_limit = 8000
-
                 raw_results = self._execute_txtai_search(
                     query=semantic_query if semantic_query else query,
-                    limit=search_limit
+                    limit=8000
                 )
-                logger.debug(f"txtai returned {len(raw_results)} raw results (limit={search_limit})")
+                logger.debug(f"txtai returned {len(raw_results)} raw results")
             except Exception as e:
                 logger.error(f"Search failed: {e}")
                 raise
@@ -251,12 +231,14 @@ class SearchEngine:
             needs_exact_phrase_filter = has_exact_phrases
             needs_title_phrase_filter = has_title_phrases
 
-        # Apply filters (source, author, date)
-        # Semantic search and pure phrase queries need Python filtering
-        # Filter-only database search already applied filters in SQL
-        if filters and not is_filter_only:
+        # Apply filters (source, author, date) - only for semantic search results
+        # Database search already applied filters in SQL
+        if filters and has_semantic_terms:
             filtered_results = self._apply_filters(raw_results, filters)
             logger.debug(f"Filtered {len(raw_results)} -> {len(filtered_results)} results")
+        elif not has_semantic_terms:
+            # Database search already filtered
+            filtered_results = raw_results
         else:
             filtered_results = raw_results
 
@@ -594,7 +576,7 @@ class SearchEngine:
         exact_phrases: List[str] = None,
         title_phrases: List[str] = None,
         filters: Dict[str, Any] = None,
-        limit: Optional[int] = 8000
+        limit: int = 8000
     ) -> List[Dict]:
         """
         Search database directly for documents matching phrases and/or filters.
@@ -606,7 +588,7 @@ class SearchEngine:
             exact_phrases: Phrases that must appear in content or title
             title_phrases: Phrases that must appear in title only
             filters: Optional filters (author, source, date) to apply in SQL
-            limit: Maximum results (None for unlimited)
+            limit: Maximum results
 
         Returns:
             List of result dicts with metadata (no content yet)
@@ -675,7 +657,6 @@ class SearchEngine:
         
         where_clause = " AND ".join(conditions) if conditions else "1=1"
 
-        # Build query with optional LIMIT
         query = f"""
             SELECT
                 a.id as article_id,
@@ -694,13 +675,10 @@ class SearchEngine:
             FROM articles a
             WHERE {where_clause} AND a.indexed = 1
             ORDER BY a.published_date DESC
+            LIMIT ?
         """
 
-        # Only add LIMIT if specified
-        if limit is not None:
-            query += " LIMIT ?"
-            params.append(limit)
-
+        params.append(limit)
         cursor.execute(query, params)
         
         results = []
@@ -731,71 +709,6 @@ class SearchEngine:
         
         logger.info(f"Database search found {len(results)} matches (filters applied in SQL)")
         return results
-
-    def _score_results_semantically(
-        self,
-        results: List[Dict],
-        query: str
-    ) -> List[Dict]:
-        """
-        Score an arbitrary list of results semantically against a query.
-
-        This is used for pure phrase queries where we fetch ALL matching articles
-        from the database, then rank them by semantic relevance instead of by date.
-
-        Args:
-            results: List of results from database search (no scores yet)
-            query: Query string to score against
-
-        Returns:
-            Results with updated semantic scores, sorted by score descending
-        """
-        if not results or not query:
-            return results
-
-        logger.info(f"Scoring {len(results)} database results semantically against query: '{query}'")
-
-        # Fetch content for all results
-        results_with_content = self._enrich_with_content(results)
-
-        # Build list of texts to score (title + content for each result)
-        texts_to_score = []
-        result_indices = []  # Track which result each text belongs to
-
-        for i, result in enumerate(results_with_content):
-            title = result.get('title', '')
-            content = result.get('text', '')
-
-            # Combine title and content for scoring
-            full_text = f"{title} {content}".strip()
-
-            if full_text:
-                texts_to_score.append(full_text)
-                result_indices.append(i)
-
-        if not texts_to_score:
-            logger.warning("No content to score semantically")
-            return results
-
-        # Compute semantic similarity scores using txtai
-        # similarity() returns a list of scores in the same order as texts
-        try:
-            scores = self.embeddings.similarity(query, texts_to_score)
-            logger.debug(f"Computed {len(scores)} semantic similarity scores")
-        except Exception as e:
-            logger.error(f"Semantic scoring failed: {e}")
-            # Fall back to original results without semantic scores
-            return results
-
-        # Update scores in results
-        for score, result_idx in zip(scores, result_indices):
-            results_with_content[result_idx]['score'] = float(score)
-
-        # Sort by semantic score (descending)
-        sorted_results = sorted(results_with_content, key=lambda x: x.get('score', 0.0), reverse=True)
-
-        logger.info(f"Semantically scored and sorted {len(sorted_results)} results")
-        return sorted_results
 
     def _enrich_with_filter_metadata(self, results: List) -> List[Dict]:
         """
