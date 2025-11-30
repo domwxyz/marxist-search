@@ -120,6 +120,17 @@ SEMANTIC_FILTER_CONFIG = {
 # Reranking Configuration
 # Applied after semantic search to boost results with query term matches
 RERANKING_CONFIG = {
+    # Query-length aware boost scaling
+    # Reduces keyword/title signals for longer conceptual queries to let semantics dominate
+    # Short queries (1-2 terms) need strong keyword matching: "venezuela", "marx"
+    # Long queries (4+ terms) need semantic understanding: "is communism compatible with democracy"
+    "query_length_scaling": {
+        "enabled": True,
+        "short_query_terms": 2,        # 1-2 terms = full boost (100%)
+        "medium_query_terms": 3,       # 3 terms = medium boost (75%)
+        "long_query_multiplier": 0.4,  # 4+ terms = light boost (40%)
+    },
+
     # Title term boost: rewards results where query terms appear in title
     "title_boost_max": 0.10,           # Maximum boost when all query terms in title
 
