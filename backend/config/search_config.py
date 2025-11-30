@@ -81,10 +81,19 @@ SEMANTIC_FILTER_CONFIG = {
     # Filtering strategy: "statistical", "percentile", "fixed", or "hybrid"
     "strategy": "hybrid",
 
+    # Keyword-aware filtering: Use lower threshold for results containing query terms
+    # This prevents filtering out articles that literally mention the search terms
+    # but have slightly lower semantic scores due to chunking or context
+    "keyword_aware": {
+        "enabled": True,                   # Enable keyword-aware dual thresholds
+        "keyword_match_threshold": 0.40,   # Lenient threshold for keyword matches
+        "min_term_length": 3,              # Only check terms with 3+ chars (skip "the", "a", etc.)
+    },
+
     # Hybrid strategy settings (recommended)
     # Threshold = max(min_absolute_threshold, mean - std_multiplier * std_dev)
     "hybrid": {
-        "min_absolute_threshold": 0.52,    # Never keep results below this score
+        "min_absolute_threshold": 0.52,    # Never keep results below this score (unless keyword match)
         "std_multiplier": 2.0,             # How many std devs below mean to cut off
         "use_median": False,               # Use median instead of mean (more robust to outliers)
     },
