@@ -231,7 +231,8 @@ class SearchEngine:
 
             # Apply semantic score filtering to remove irrelevant results
             # This filters based on statistical analysis of the score distribution
-            raw_results = self._filter_by_semantic_score(raw_results)
+            # Pass query terms for keyword-aware filtering
+            raw_results = self._filter_by_semantic_score(raw_results, parsed_query.semantic_terms)
 
             needs_exact_phrase_filter = has_exact_phrases
             needs_title_phrase_filter = has_title_phrases
@@ -576,7 +577,7 @@ class SearchEngine:
 
         return enriched_results
 
-    def _filter_by_semantic_score(self, results: List[Dict]) -> List[Dict]:
+    def _filter_by_semantic_score(self, results: List[Dict], query_terms: List[str] = None) -> List[Dict]:
         """
         Filter results based on semantic similarity scores using statistical analysis.
 
@@ -586,11 +587,16 @@ class SearchEngine:
         - percentile: keep top N% of results
         - fixed: simple threshold
 
-        This removes semantically irrelevant results that txtai returns just because
-        the limit is 8000, even though they may have very low similarity scores.
+        Supports keyword-aware filtering with dual thresholds:
+        - Results with query terms in title/content: lenient threshold (0.40)
+        - Results without query terms: strict threshold (0.52)
+
+        This prevents filtering out articles that literally contain search terms
+        but have lower semantic scores due to chunking or context issues.
 
         Args:
             results: Results with 'score' field from txtai
+            query_terms: List of query terms for keyword-aware filtering
 
         Returns:
             Filtered results with semantically irrelevant ones removed
@@ -616,7 +622,7 @@ class SearchEngine:
         std_dev = statistics.stdev(scores) if len(scores) > 1 else 0.0
         median_score = statistics.median(scores)
 
-        # Determine threshold based on strategy
+        # Determine base threshold based on strategy
         threshold = 0.0
 
         if strategy == 'hybrid':
@@ -668,12 +674,133 @@ class SearchEngine:
 
             logger.info(f"Fixed score filtering: threshold={threshold:.3f}")
 
-        # Filter results
-        filtered = [r for r in results if r.get('score', 0.0) >= threshold]
+        # Keyword-aware filtering: use dual thresholds
+        keyword_aware_config = SEMANTIC_FILTER_CONFIG.get('keyword_aware', {})
+        keyword_aware_enabled = keyword_aware_config.get('enabled', False)
+        keyword_match_threshold = keyword_aware_config.get('keyword_match_threshold', 0.40)
+        min_term_length = keyword_aware_config.get('min_term_length', 3)
+
+        # Filter meaningful query terms
+        meaningful_terms = []
+        if query_terms and keyword_aware_enabled:
+            meaningful_terms = [
+                term.lower() for term in query_terms
+                if len(term) >= min_term_length
+            ]
+
+        # Filter results with keyword-aware thresholds
+        filtered = []
+        needs_content_check = []  # Results between thresholds that need content check
+
+        # First pass: check titles (fast - already in metadata)
+        for result in results:
+            score = result.get('score', 0.0)
+
+            # Check if result passes strict threshold
+            if score >= threshold:
+                filtered.append(result)
+                continue
+
+            # Check keyword-aware bypass (only if enabled and we have meaningful terms)
+            if keyword_aware_enabled and meaningful_terms and score >= keyword_match_threshold:
+                # Check title for query terms (title is already in metadata - fast!)
+                title = result.get('title', '').lower()
+
+                # If title contains any meaningful query term, use lenient threshold
+                has_keyword_in_title = any(
+                    re.search(r'\b' + re.escape(term) + r'\b', title)
+                    for term in meaningful_terms
+                )
+
+                if has_keyword_in_title:
+                    filtered.append(result)
+                    continue
+
+                # Title doesn't have keyword, but score is in bypass range
+                # Check content as well (batch SQL query later)
+                needs_content_check.append(result)
+
+        # Second pass: check content for remaining candidates (batch SQL query)
+        keyword_bypassed = 0
+        if keyword_aware_enabled and meaningful_terms and needs_content_check:
+            # Extract article IDs for batch query
+            article_ids_to_check = []
+            chunk_lookups = []  # (txtai_id, article_id, chunk_index)
+
+            for result in needs_content_check:
+                txtai_id = result.get('id')
+                if not txtai_id:
+                    continue
+
+                parsed = parse_txtai_id(txtai_id)
+                if parsed.type == 'article':
+                    article_ids_to_check.append((txtai_id, parsed.article_id))
+                else:  # chunk
+                    chunk_lookups.append((txtai_id, parsed.article_id, parsed.chunk_index))
+
+            # Batch check which articles contain keywords in content
+            keyword_matches = set()
+
+            if article_ids_to_check or chunk_lookups:
+                self.connect_db()
+                cursor = self.db_conn.cursor()
+
+                # Check non-chunked articles
+                if article_ids_to_check:
+                    article_ids = [aid for _, aid in article_ids_to_check]
+                    placeholders = ','.join('?' * len(article_ids))
+
+                    # Build OR conditions for all meaningful terms
+                    term_conditions = []
+                    term_params = []
+                    for term in meaningful_terms:
+                        # Use LIKE for presence check (fast, no content fetch)
+                        escaped_term = term.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+                        term_conditions.append("LOWER(content) LIKE ? ESCAPE '\\'")
+                        term_params.append(f"%{escaped_term}%")
+
+                    where_clause = f"id IN ({placeholders}) AND ({' OR '.join(term_conditions)})"
+                    query = f"SELECT id FROM articles WHERE {where_clause}"
+
+                    cursor.execute(query, article_ids + term_params)
+                    matching_article_ids = {row['id'] for row in cursor.fetchall()}
+
+                    # Map back to txtai IDs
+                    for txtai_id, article_id in article_ids_to_check:
+                        if article_id in matching_article_ids:
+                            keyword_matches.add(txtai_id)
+
+                # Check chunks
+                for txtai_id, article_id, chunk_index in chunk_lookups:
+                    term_conditions = []
+                    term_params = []
+                    for term in meaningful_terms:
+                        escaped_term = term.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+                        term_conditions.append("LOWER(content) LIKE ? ESCAPE '\\'")
+                        term_params.append(f"%{escaped_term}%")
+
+                    where_clause = f"article_id = ? AND chunk_index = ? AND ({' OR '.join(term_conditions)})"
+                    query = f"SELECT article_id FROM article_chunks WHERE {where_clause}"
+
+                    cursor.execute(query, [article_id, chunk_index] + term_params)
+                    if cursor.fetchone():
+                        keyword_matches.add(txtai_id)
+
+            # Add results with keyword matches in content
+            for result in needs_content_check:
+                if result.get('id') in keyword_matches:
+                    filtered.append(result)
+                    keyword_bypassed += 1
+
+        if keyword_aware_enabled and keyword_bypassed > 0:
+            logger.info(
+                f"Keyword-aware filtering: {keyword_bypassed} results with keyword matches "
+                f"kept at {keyword_match_threshold:.3f} threshold (vs strict {threshold:.3f})"
+            )
 
         logger.info(
             f"Semantic score filtering removed {len(results) - len(filtered)} results "
-            f"({len(filtered)}/{len(results)} kept, threshold={threshold:.3f})"
+            f"({len(filtered)}/{len(results)} kept, base_threshold={threshold:.3f})"
         )
 
         return filtered
