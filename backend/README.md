@@ -458,12 +458,41 @@ SEARCH_CONFIG = {
     }
 }
 
-# Reranking configuration - custom multi-signal reranking
+# Semantic score filtering - statistical analysis to remove irrelevant results
+SEMANTIC_FILTER_CONFIG = {
+    "enabled": True,
+    "strategy": "hybrid",  # hybrid, statistical, percentile, or fixed
+
+    # Keyword-aware dual thresholds
+    "keyword_aware": {
+        "enabled": True,
+        "keyword_match_threshold": 0.40,  # Lenient threshold for keyword matches
+        "min_term_length": 3,             # Only check terms with 3+ chars
+    },
+
+    # Hybrid strategy: max(min_absolute_threshold, mean - std_multiplier * std_dev)
+    "hybrid": {
+        "min_absolute_threshold": 0.52,  # Never keep results below this (unless keyword match)
+        "std_multiplier": 2.0,            # How many std devs below mean to cut off
+        "use_median": False,
+    },
+}
+
+# Reranking configuration - multi-signal reranking with query-length aware boosting
 RERANKING_CONFIG = {
-    "title_boost_max": 0.08,           # Maximum boost when all query terms in title
-    "keyword_boost_max": 0.06,         # Maximum keyword frequency boost
-    "keyword_boost_scale": 0.02,       # Scaling factor for log TF score
-    "keyword_rerank_top_n": 150,       # Number of top candidates to rerank
+    # Query-length aware boost scaling (balances keyword vs semantic)
+    "query_length_scaling": {
+        "enabled": True,
+        "short_query_terms": 2,        # 1-2 terms = 100% boost
+        "medium_query_terms": 3,       # 3 terms = 75% boost
+        "long_query_multiplier": 0.4,  # 4+ terms = 40% boost
+    },
+
+    "title_boost_max": 0.10,           # Maximum boost when all query terms in title
+    "keyword_boost_max": 0.10,         # Maximum keyword density boost
+    "keyword_boost_scale": 0.025,      # Scaling factor for log TF score
+    "keyword_density_scale": 1000,     # Multiplier for density calculation
+    "keyword_rerank_top_n": 200,       # Number of top candidates to rerank
     "keyword_max_query_terms": 5,      # Skip keyword boost for longer queries (perf)
 }
 
@@ -630,19 +659,121 @@ Long articles are automatically chunked:
 
 ### Search Architecture
 
-Pure semantic search with custom multi-signal reranking:
+Advanced semantic search with intelligent filtering and multi-signal reranking:
 
-- **Semantic Search (100%)**: Vector similarity with bge-small-en-v1.5 embeddings
-  - BM25 disabled in txtai (`keyword: False`) to prevent index corruption during incremental updates
-  - Content not stored in txtai (`content: False`) - all content fetched from SQLite database instead
-- **Title Weighting**: Titles repeated 5x during indexing for better semantic relevance
-- **Query Expansion**: Synonyms and aliases automatically expand queries
-- **Custom Reranking**: Multi-signal reranking applied after semantic search retrieval
-  - **Title Term Boost**: Rewards results where query terms appear in title (max +0.08)
-  - **Keyword Frequency Boost**: Pseudo-BM25 on top 150 candidates using log-scaled term frequency (max +0.06)
-  - **Recency Boost**: Additive boosts for recent articles (7 days: +0.07, 30 days: +0.05, 90 days: +0.03, 1 year: +0.02, 3 years: +0.01)
-- **Smart Deduplication**: Groups chunks by article, returns highest-scoring chunk per article
-- **On-Demand Content Fetching**: Content fetched from SQLite only for final paginated results (not for all 8000 candidates)
+#### Core Search Pipeline
+
+1. **Semantic Search (100%)**: Vector similarity with BAAI/bge-base-en-v1.5 embeddings
+   - BM25 disabled in txtai (`keyword: False`) to prevent index corruption during incremental updates
+   - Content not stored in txtai (`content: False`) - all content fetched from SQLite database instead
+   - Returns up to 8000 candidates for filtering/reranking
+
+2. **Semantic Score Filtering**: Statistical analysis removes irrelevant results
+   - **Hybrid Strategy** (default): `threshold = max(0.52, mean - 2.0 * std_dev)`
+     - Adapts to each query's score distribution
+     - Minimum absolute threshold (0.52) prevents low-quality results
+     - Statistical component (mean - 2σ) handles queries with varying distributions
+   - **Alternative Strategies**: Statistical, Percentile, or Fixed threshold
+   - Filters out semantically irrelevant tail results (e.g., page 491 of "malcolm x" with 0.46 scores)
+
+3. **Keyword-Aware Filtering**: Dual-threshold system prevents over-filtering
+   - **Strict threshold (0.52)**: For results without query keywords (filters garbage)
+   - **Lenient threshold (0.40)**: For results containing query keywords (preserves keyword matches)
+   - Two-pass optimization:
+     - Fast title check (already in memory)
+     - Batch SQL content check for candidates scoring 0.40-0.52
+   - Solves chunking issues: Articles literally mentioning search terms but scoring 0.40-0.51 are rescued
+
+4. **Query Expansion**: Synonyms and aliases automatically expand semantic queries
+   - Bidirectional alias expansion (e.g., "USSR" ↔ "Soviet Union")
+   - Synonym groups for concept matching
+   - Applied only to semantic search, not exact phrase filters
+
+5. **Smart Deduplication**: Groups chunks by article, returns highest-scoring chunk per article
+
+6. **Multi-Signal Reranking**: Query-length aware boosting balances keyword vs semantic signals
+   - **Title Term Boost**: Rewards results where query terms appear in title
+     - Max boost: +0.10 (short queries), +0.075 (3-term queries), +0.04 (long queries)
+   - **Length-Normalized Keyword Density Boost**: Rewards focused articles over scattered mentions
+     - Uses keyword density (mentions/word_count) instead of raw counts
+     - Short focused article (150 words, 3 mentions): 2% density → high boost
+     - Long article (5000 words, 10 mentions): 0.2% density → low boost
+     - Applied to top 200 candidates only (performance optimization)
+     - Max boost: +0.10 (short queries), +0.075 (3-term queries), +0.04 (long queries)
+   - **Recency Boost**: Additive boosts for recent articles
+     - 7 days: +0.07, 30 days: +0.05, 90 days: +0.03, 1 year: +0.02, 3 years: +0.01
+   - **Query-Length Scaling**: Dynamically adjusts keyword/title signals based on query complexity
+     - **1-2 terms** ("venezuela", "marx"): 100% boost (full keyword matching)
+     - **3 terms** ("venezuela hugo chavez"): 75% boost (balanced)
+     - **4+ terms** ("is communism compatible with democracy"): 40% boost (semantic dominance)
+     - Gives conceptual queries more semantic understanding while preserving keyword precision for simple searches
+
+7. **On-Demand Content Fetching**: Content fetched from SQLite only for final paginated results
+
+#### Search Configuration Example
+
+```python
+# Semantic Score Filtering
+SEMANTIC_FILTER_CONFIG = {
+    "enabled": True,
+    "strategy": "hybrid",  # or "statistical", "percentile", "fixed"
+
+    # Keyword-aware dual thresholds
+    "keyword_aware": {
+        "enabled": True,
+        "keyword_match_threshold": 0.40,  # Lenient for keyword matches
+        "min_term_length": 3,             # Ignore "the", "a", etc.
+    },
+
+    # Hybrid strategy settings
+    "hybrid": {
+        "min_absolute_threshold": 0.52,  # Strict threshold
+        "std_multiplier": 2.0,            # Statistical component
+        "use_median": False,
+    },
+}
+
+# Reranking Configuration
+RERANKING_CONFIG = {
+    # Query-length aware scaling
+    "query_length_scaling": {
+        "enabled": True,
+        "short_query_terms": 2,        # 1-2 terms = 100% boost
+        "medium_query_terms": 3,       # 3 terms = 75% boost
+        "long_query_multiplier": 0.4,  # 4+ terms = 40% boost
+    },
+
+    # Boost settings (scaled by query length)
+    "title_boost_max": 0.10,           # Max title boost
+    "keyword_boost_max": 0.10,         # Max keyword boost
+    "keyword_boost_scale": 0.025,      # TF scaling factor
+    "keyword_density_scale": 1000,     # Density multiplier
+    "keyword_rerank_top_n": 200,       # Rerank top N candidates
+}
+```
+
+#### Title Weighting
+
+- Titles repeated 5x during indexing for better semantic relevance
+- Only applies to non-chunked articles and first chunk of chunked articles
+- Configurable via `TITLE_WEIGHT_MULTIPLIER`
+
+#### Performance Characteristics
+
+**For "malcolm x" (2-term query)**:
+- 8000 initial semantic results → ~324 after filtering (0.52 threshold)
+- Full keyword/title boosting (100%) prioritizes exact matches
+- Top results: Articles about Malcolm X, not UK politics
+
+**For "shakespeare" (1-term query)**:
+- Keyword-aware filtering rescues 88 articles mentioning "shakespeare"
+- Without keyword-aware: only 45 results (54 articles incorrectly filtered)
+- Full keyword/title boosting (100%) surfaces focused articles
+
+**For "is communism compatible with democracy" (5-term query)**:
+- Keyword/title boosting reduced to 40% (semantic dominance)
+- Nuanced conceptual articles rank higher
+- Generic "Communism 101" articles don't dominate despite high keyword density
 
 ### Text Normalization
 
