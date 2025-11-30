@@ -1255,13 +1255,14 @@ class SearchEngine:
         Calculate boost multiplier based on query length.
 
         Short queries (1-2 terms) need strong keyword matching.
+        Medium queries (3 terms) need balanced approach.
         Long queries (4+ terms) need semantic understanding.
 
         Args:
             query_terms: List of query terms
 
         Returns:
-            Multiplier for boost (1.0 = full boost, 0.4 = reduced boost)
+            Multiplier for boost (1.0 = full boost, 0.5 = medium, 0.25 = semantic focus)
         """
         scaling_config = RERANKING_CONFIG.get('query_length_scaling', {})
 
@@ -1271,16 +1272,17 @@ class SearchEngine:
         num_terms = len(query_terms) if query_terms else 0
         short_threshold = scaling_config.get('short_query_terms', 2)
         medium_threshold = scaling_config.get('medium_query_terms', 3)
-        long_multiplier = scaling_config.get('long_query_multiplier', 0.4)
+        medium_multiplier = scaling_config.get('medium_query_multiplier', 0.5)
+        long_multiplier = scaling_config.get('long_query_multiplier', 0.25)
 
         if num_terms <= short_threshold:
-            # Short query: full boost
+            # Short query: full boost (100%)
             return 1.0
         elif num_terms == medium_threshold:
-            # Medium query: 75% boost (midpoint between 1.0 and long_multiplier)
-            return (1.0 + long_multiplier) / 2
+            # Medium query: 50% boost
+            return medium_multiplier
         else:
-            # Long query: reduced boost for semantic dominance
+            # Long query: 25% boost (strong semantic focus)
             return long_multiplier
 
     def _apply_title_term_boost(self, results: List[Dict], query_terms: List[str]) -> List[Dict]:

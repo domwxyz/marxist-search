@@ -126,9 +126,10 @@ RERANKING_CONFIG = {
     # Long queries (4+ terms) need semantic understanding: "is communism compatible with democracy"
     "query_length_scaling": {
         "enabled": True,
-        "short_query_terms": 2,        # 1-2 terms = full boost (100%)
-        "medium_query_terms": 3,       # 3 terms = medium boost (75%)
-        "long_query_multiplier": 0.4,  # 4+ terms = light boost (40%)
+        "short_query_terms": 2,         # 1-2 terms = full boost (100%)
+        "medium_query_terms": 3,        # 3 terms = medium boost (50%)
+        "medium_query_multiplier": 0.5, # 3 terms = 50% boost
+        "long_query_multiplier": 0.25,  # 4+ terms = 25% boost (strong semantic focus)
     },
 
     # Title term boost: rewards results where query terms appear in title
