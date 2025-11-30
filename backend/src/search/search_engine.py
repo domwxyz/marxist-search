@@ -1250,41 +1250,81 @@ class SearchEngine:
 
         return results
 
+    def _get_query_length_multiplier(self, query_terms: List[str]) -> float:
+        """
+        Calculate boost multiplier based on query length.
+
+        Short queries (1-2 terms) need strong keyword matching.
+        Long queries (4+ terms) need semantic understanding.
+
+        Args:
+            query_terms: List of query terms
+
+        Returns:
+            Multiplier for boost (1.0 = full boost, 0.4 = reduced boost)
+        """
+        scaling_config = RERANKING_CONFIG.get('query_length_scaling', {})
+
+        if not scaling_config.get('enabled', True):
+            return 1.0
+
+        num_terms = len(query_terms) if query_terms else 0
+        short_threshold = scaling_config.get('short_query_terms', 2)
+        medium_threshold = scaling_config.get('medium_query_terms', 3)
+        long_multiplier = scaling_config.get('long_query_multiplier', 0.4)
+
+        if num_terms <= short_threshold:
+            # Short query: full boost
+            return 1.0
+        elif num_terms == medium_threshold:
+            # Medium query: 75% boost (midpoint between 1.0 and long_multiplier)
+            return (1.0 + long_multiplier) / 2
+        else:
+            # Long query: reduced boost for semantic dominance
+            return long_multiplier
+
     def _apply_title_term_boost(self, results: List[Dict], query_terms: List[str]) -> List[Dict]:
         """
         Boost results where query terms appear in the title.
-        
+
         This is essentially free since title is already in result metadata.
         Rewards "obvious" matches where the query directly matches the title.
-        
+
+        Uses query-length aware scaling: short queries get full boost,
+        long conceptual queries get reduced boost to let semantics dominate.
+
         Args:
             results: Deduplicated search results
             query_terms: Parsed query terms (semantic_terms from parser)
-            
+
         Returns:
             Results with title boost applied to scores
         """
         if not query_terms:
             return results
-        
+
         max_boost = RERANKING_CONFIG['title_boost_max']
-        
+        query_length_multiplier = self._get_query_length_multiplier(query_terms)
+
+        # Scale max boost by query length
+        scaled_max_boost = max_boost * query_length_multiplier
+
         for result in results:
             title_lower = result.get('title', '').lower()
-            
+
             # Count how many query terms appear in title (whole word match)
             terms_in_title = sum(
-                1 for term in query_terms 
+                1 for term in query_terms
                 if re.search(r'\b' + re.escape(term.lower()) + r'\b', title_lower)
             )
-            
+
             if terms_in_title > 0:
                 # Boost based on coverage (what % of query terms are in title)
                 coverage = terms_in_title / len(query_terms)
-                boost = max_boost * coverage
+                boost = scaled_max_boost * coverage
                 result['title_boost'] = round(boost, 4)
                 result['score'] += boost
-        
+
         return results
 
     def _apply_keyword_boost(self, results: List[Dict], query_terms: List[str]) -> List[Dict]:
@@ -1293,6 +1333,9 @@ class SearchEngine:
 
         Uses keyword density (mentions per word) instead of raw term frequency.
         This rewards focused short articles over long articles with scattered mentions.
+
+        Uses query-length aware scaling: short queries get full boost,
+        long conceptual queries get reduced boost to let semantics dominate.
 
         Example:
         - Short article (150 words, 3 mentions): density = 3/150 = 2% → high boost
@@ -1312,6 +1355,12 @@ class SearchEngine:
         max_boost = RERANKING_CONFIG['keyword_boost_max']
         scale = RERANKING_CONFIG['keyword_boost_scale']
         density_scale = RERANKING_CONFIG.get('keyword_density_scale', 1000)
+
+        # Calculate query-length multiplier
+        query_length_multiplier = self._get_query_length_multiplier(query_terms)
+
+        # Scale max boost by query length
+        scaled_max_boost = max_boost * query_length_multiplier
 
         # Split into top candidates (to rerank) and tail (keep as-is)
         top_candidates = results[:top_n]
@@ -1347,8 +1396,8 @@ class SearchEngine:
             # Normalize by number of query terms
             avg_density_score = total_density_score / len(query_terms)
 
-            # Scale to configured max boost
-            boost = min(max_boost, avg_density_score * scale)
+            # Scale to configured max boost (with query-length adjustment)
+            boost = min(scaled_max_boost, avg_density_score * scale)
             result['keyword_boost'] = round(boost, 4)
             result['score'] += boost
 
