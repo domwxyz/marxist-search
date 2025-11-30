@@ -284,19 +284,33 @@ class SearchEngine:
         if query_terms:
             deduplicated = self._apply_title_term_boost(deduplicated, query_terms)
 
-        # 2. Phrase presence boost (binary exact match signal)
+        # 2. Unified content fetch for phrase presence + keyword boosts
+        # Both need content for top N results, so fetch once and reuse
+        top_n = RERANKING_CONFIG.get('keyword_rerank_top_n', 200)
+        max_terms = RERANKING_CONFIG.get('keyword_max_query_terms', 5)
+        needs_content_fetch = (
+            (query_terms and len(query_terms) <= max_terms) or  # Keyword boost will run
+            (parsed_query.exact_phrases or (query_terms and len(query_terms) >= 2))  # Phrase boost needs content
+        )
+
+        if needs_content_fetch:
+            top_candidates = deduplicated[:top_n]
+            results_without_content = [r for r in top_candidates if not r.get('text')]
+            if results_without_content:
+                self._enrich_with_content(results_without_content)
+
+        # 3. Phrase presence boost (binary exact match signal)
         deduplicated = self._apply_phrase_presence_boost(
             deduplicated,
             query_terms,
             parsed_query.exact_phrases
         )
 
-        # 3. Keyword frequency boost on top candidates
-        max_terms = RERANKING_CONFIG['keyword_max_query_terms']
+        # 4. Keyword frequency boost on top candidates
         if query_terms and len(query_terms) <= max_terms:
             deduplicated = self._apply_keyword_boost(deduplicated, query_terms)
 
-        # 4. Semantic discovery boost (high semantic, low keyword)
+        # 5. Semantic discovery boost (high semantic, low keyword)
         if query_terms:
             deduplicated = self._apply_semantic_discovery_boost(deduplicated, query_terms)
 
@@ -1439,19 +1453,12 @@ class SearchEngine:
             if not phrase_found_in_title:
                 needs_content_check.append(result)
 
-        # Second pass: check content for phrase matches (batch fetch if needed)
+        # Second pass: check content for phrase matches (content already fetched in main pipeline)
         if needs_content_check:
-            # Check if results already have content (from keyword boost)
-            # Otherwise fetch content for top N results
             top_n = RERANKING_CONFIG.get('keyword_rerank_top_n', 200)
             content_check_candidates = needs_content_check[:top_n]
 
-            # Batch fetch content for all results that don't have it yet
-            results_without_content = [r for r in content_check_candidates if not r.get('text')]
-            if results_without_content:
-                self._enrich_with_content(results_without_content)
-
-            # Now check all candidates for phrase matches in content
+            # Check all candidates for phrase matches in content (content already loaded)
             for result in content_check_candidates:
                 content = result.get('text', '')
                 if content:
@@ -1506,11 +1513,9 @@ class SearchEngine:
         top_candidates = results[:top_n]
         tail = results[top_n:]
 
-        # Fetch content for top candidates only
-        top_with_content = self._enrich_with_content(top_candidates)
-
+        # Content already fetched in main pipeline, just use it
         # Apply length-normalized keyword density boost
-        for result in top_with_content:
+        for result in top_candidates:
             content = result.get('text', '').lower()
             word_count = result.get('word_count', 1)  # Avoid division by zero
 
@@ -1550,10 +1555,10 @@ class SearchEngine:
             result['score'] += boost
 
         # Re-sort top candidates by new combined score
-        top_with_content.sort(key=lambda x: x['score'], reverse=True)
+        top_candidates.sort(key=lambda x: x['score'], reverse=True)
 
         # Combine: reranked top + unchanged tail
-        return top_with_content + tail
+        return top_candidates + tail
 
     def _apply_semantic_discovery_boost(self, results: List[Dict], query_terms: List[str]) -> List[Dict]:
         """
