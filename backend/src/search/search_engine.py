@@ -273,6 +273,10 @@ class SearchEngine:
         deduplicated = self._deduplicate_results(filtered_results)
         total_count = len(deduplicated)
 
+        # Preserve base semantic score before applying boosts
+        for result in deduplicated:
+            result['base_semantic_score'] = result.get('score', 0.0)
+
         # === Multi-signal reranking ===
         query_terms = parsed_query.semantic_terms
 
@@ -280,12 +284,23 @@ class SearchEngine:
         if query_terms:
             deduplicated = self._apply_title_term_boost(deduplicated, query_terms)
 
-        # 2. Keyword frequency boost on top candidates
+        # 2. Phrase presence boost (binary exact match signal)
+        deduplicated = self._apply_phrase_presence_boost(
+            deduplicated,
+            query_terms,
+            parsed_query.exact_phrases
+        )
+
+        # 3. Keyword frequency boost on top candidates
         max_terms = RERANKING_CONFIG['keyword_max_query_terms']
         if query_terms and len(query_terms) <= max_terms:
             deduplicated = self._apply_keyword_boost(deduplicated, query_terms)
 
-        # 3. Recency boost
+        # 4. Semantic discovery boost (high semantic, low keyword)
+        if query_terms:
+            deduplicated = self._apply_semantic_discovery_boost(deduplicated, query_terms)
+
+        # 5. Recency boost
         boosted = self._apply_recency_boost(deduplicated)
 
         # Sort by final combined score
@@ -628,8 +643,26 @@ class SearchEngine:
         if strategy == 'hybrid':
             config = SEMANTIC_FILTER_CONFIG['hybrid']
             min_threshold = config.get('min_absolute_threshold', 0.35)
-            std_multiplier = config.get('std_multiplier', 1.5)
+            base_std_multiplier = config.get('std_multiplier', 2.0)
             use_median = config.get('use_median', False)
+
+            # Distribution-adaptive multiplier
+            if config.get('distribution_adaptive', False):
+                tight_threshold = config.get('tight_cluster_std_threshold', 0.05)
+                wide_threshold = config.get('wide_spread_std_threshold', 0.12)
+
+                if std_dev < tight_threshold:
+                    # Tight cluster - semantic not differentiating well
+                    std_multiplier = config.get('tight_cluster_multiplier', 1.0)
+                    logger.debug(f"Tight score cluster (std={std_dev:.3f}), using stricter filtering")
+                elif std_dev > wide_threshold:
+                    # Wide spread - clear relevance gradient
+                    std_multiplier = config.get('wide_spread_multiplier', 2.5)
+                    logger.debug(f"Wide score spread (std={std_dev:.3f}), trusting semantic ranking")
+                else:
+                    std_multiplier = base_std_multiplier
+            else:
+                std_multiplier = base_std_multiplier
 
             center = median_score if use_median else mean_score
             statistical_threshold = center - (std_multiplier * std_dev)
@@ -637,7 +670,8 @@ class SearchEngine:
 
             logger.info(
                 f"Hybrid score filtering: mean={mean_score:.3f}, median={median_score:.3f}, "
-                f"std={std_dev:.3f}, statistical_threshold={statistical_threshold:.3f}, "
+                f"std={std_dev:.3f}, std_multiplier={std_multiplier:.2f}, "
+                f"statistical_threshold={statistical_threshold:.3f}, "
                 f"final_threshold={threshold:.3f}"
             )
 
@@ -1329,6 +1363,114 @@ class SearchEngine:
 
         return results
 
+    def _apply_phrase_presence_boost(self, results: List[Dict], query_terms: List[str], exact_phrases: List[str]) -> List[Dict]:
+        """
+        Apply binary boost when query phrase literally appears in title/content.
+
+        Different from keyword density - this rewards exact matches heavily.
+        Applied BEFORE keyword density boost in the pipeline.
+
+        Args:
+            results: Deduplicated search results (must have 'title', may have 'text')
+            query_terms: Parsed semantic terms from query
+            exact_phrases: Explicit quoted phrases from query
+
+        Returns:
+            Results with phrase_presence_boost applied to scores
+        """
+        config = RERANKING_CONFIG.get('phrase_presence_boost', {})
+        if not config.get('enabled', True):
+            return results
+
+        if not query_terms and not exact_phrases:
+            return results
+
+        # Get boost values
+        phrase_in_title_boost = config.get('phrase_in_title', 0.08)
+        phrase_in_content_boost = config.get('phrase_in_content', 0.06)
+        all_terms_in_title_boost = config.get('all_terms_in_title', 0.04)
+
+        # Apply query-length scaling
+        query_length_multiplier = self._get_query_length_multiplier(query_terms)
+        phrase_in_title_boost *= query_length_multiplier
+        phrase_in_content_boost *= query_length_multiplier
+        all_terms_in_title_boost *= query_length_multiplier
+
+        # Construct search phrases: combine exact_phrases + full query if len >= 2
+        search_phrases = list(exact_phrases) if exact_phrases else []
+        if query_terms and len(query_terms) >= 2:
+            full_query_phrase = " ".join(query_terms)
+            if full_query_phrase not in search_phrases:
+                search_phrases.append(full_query_phrase)
+
+        if not search_phrases:
+            return results
+
+        # Track which results need content check for phrase_in_content boost
+        needs_content_check = []
+
+        # First pass: check titles for phrase matches
+        for result in results:
+            title_lower = result.get('title', '').lower()
+            phrase_found_in_title = False
+
+            # Check if any search phrase appears in title
+            for phrase in search_phrases:
+                pattern = r'\b' + re.escape(phrase.lower()) + r'\b'
+                if re.search(pattern, title_lower):
+                    # Apply phrase_in_title boost
+                    result['phrase_presence_boost'] = phrase_in_title_boost
+                    result['score'] += phrase_in_title_boost
+                    phrase_found_in_title = True
+                    break
+
+            if not phrase_found_in_title and query_terms:
+                # Check if all query terms appear in title (not necessarily as a phrase)
+                all_terms_present = all(
+                    re.search(r'\b' + re.escape(term.lower()) + r'\b', title_lower)
+                    for term in query_terms
+                )
+                if all_terms_present:
+                    result['phrase_presence_boost'] = all_terms_in_title_boost
+                    result['score'] += all_terms_in_title_boost
+                    phrase_found_in_title = True
+
+            # If phrase not found in title, mark for content check
+            if not phrase_found_in_title:
+                needs_content_check.append(result)
+
+        # Second pass: check content for phrase matches (batch fetch if needed)
+        if needs_content_check:
+            # Check if results already have content (from keyword boost)
+            # Otherwise fetch content for top N results
+            top_n = RERANKING_CONFIG.get('keyword_rerank_top_n', 200)
+            content_check_candidates = needs_content_check[:top_n]
+
+            # Fetch content if not already present
+            for result in content_check_candidates:
+                content = result.get('text', '')
+
+                # Fetch content if not already present
+                if not content:
+                    # Batch fetch would be more efficient, but for simplicity fetch individually
+                    results_with_content = self._enrich_with_content([result])
+                    if results_with_content:
+                        content = results_with_content[0].get('text', '')
+                        result['text'] = content
+
+                if content:
+                    content_lower = content.lower()
+
+                    # Check if any search phrase appears in content
+                    for phrase in search_phrases:
+                        pattern = r'\b' + re.escape(phrase.lower()) + r'\b'
+                        if re.search(pattern, content_lower):
+                            result['phrase_presence_boost'] = phrase_in_content_boost
+                            result['score'] += phrase_in_content_boost
+                            break
+
+        return results
+
     def _apply_keyword_boost(self, results: List[Dict], query_terms: List[str]) -> List[Dict]:
         """
         Apply length-normalized keyword density boost to top candidates.
@@ -1387,9 +1529,17 @@ class SearchEngine:
 
                 if count > 0:
                     # Calculate keyword density (normalized by document length)
-                    # Scale by density_scale to get reasonable numbers for log
-                    # E.g., 2% density * 1000 = 20 for log scaling
-                    density = (count / word_count) * density_scale
+                    # Apply length normalization strategy
+                    length_norm = RERANKING_CONFIG.get('keyword_length_normalization', 'linear')
+                    log_offset = RERANKING_CONFIG.get('keyword_log_base_offset', 100)
+
+                    if length_norm == 'log':
+                        # Diminishing penalty for long articles
+                        normalized_length = math.log(word_count + log_offset)
+                        density = (count / normalized_length) * density_scale
+                    else:
+                        # Original linear normalization
+                        density = (count / word_count) * density_scale
 
                     # Log-scaled density (diminishing returns for very high density)
                     density_tf = 1 + math.log(1 + density)
@@ -1408,6 +1558,72 @@ class SearchEngine:
 
         # Combine: reranked top + unchanged tail
         return top_with_content + tail
+
+    def _apply_semantic_discovery_boost(self, results: List[Dict], query_terms: List[str]) -> List[Dict]:
+        """
+        Boost results with high semantic score but low keyword overlap.
+
+        These are "conceptual discoveries" - the model found relevant content
+        that doesn't contain the user's exact terms.
+
+        Args:
+            results: Results after keyword boost (will have keyword_boost field if applicable)
+            query_terms: Query terms to check for presence
+
+        Returns:
+            Results with semantic_discovery_boost applied where applicable
+        """
+        config = RERANKING_CONFIG.get('semantic_discovery_boost', {})
+        if not config.get('enabled', True):
+            return results
+
+        if not query_terms:
+            return results
+
+        min_semantic_score = config.get('min_semantic_score', 0.70)
+        max_keyword_hits = config.get('max_keyword_hits', 1)
+        boost = config.get('boost', 0.025)
+
+        discovery_count = 0
+
+        for result in results:
+            # Check base semantic score (before boosts)
+            base_score = result.get('base_semantic_score', result.get('score', 0.0))
+
+            if base_score < min_semantic_score:
+                continue
+
+            # Check keyword presence - use keyword_boost as indicator
+            # If keyword_boost is 0 or very low, this is likely a semantic-only match
+            keyword_boost_value = result.get('keyword_boost', 0.0)
+
+            # Alternative: manually count keyword hits in title
+            title_lower = result.get('title', '').lower()
+            keyword_hits_in_title = sum(
+                1 for term in query_terms
+                if re.search(r'\b' + re.escape(term.lower()) + r'\b', title_lower)
+            )
+
+            # Consider it a "discovery" if:
+            # - No keyword boost was applied (or very minimal)
+            # - Very few query terms appear in title
+            has_low_keyword_presence = (
+                keyword_boost_value <= 0.01 and
+                keyword_hits_in_title <= max_keyword_hits
+            )
+
+            if has_low_keyword_presence:
+                result['semantic_discovery_boost'] = boost
+                result['score'] += boost
+                discovery_count += 1
+
+        if discovery_count > 0:
+            logger.debug(
+                f"Semantic discovery boost applied to {discovery_count} results "
+                f"(high semantic score, low keyword overlap)"
+            )
+
+        return results
 
     def _ensure_content(self, results: List[Dict]) -> List[Dict]:
         """

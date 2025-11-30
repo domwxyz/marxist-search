@@ -94,8 +94,15 @@ SEMANTIC_FILTER_CONFIG = {
     # Threshold = max(min_absolute_threshold, mean - std_multiplier * std_dev)
     "hybrid": {
         "min_absolute_threshold": 0.52,    # Never keep results below this score (unless keyword match)
-        "std_multiplier": 2.0,             # How many std devs below mean to cut off
+        "std_multiplier": 2.0,             # Base multiplier
         "use_median": False,               # Use median instead of mean (more robust to outliers)
+
+        # Distribution-aware adjustment
+        "distribution_adaptive": True,
+        "tight_cluster_std_threshold": 0.05,  # If std < this, distribution is tight
+        "tight_cluster_multiplier": 1.0,      # Use tighter filtering (mean - 1.0*std)
+        "wide_spread_std_threshold": 0.12,    # If std > this, distribution has clear gradient
+        "wide_spread_multiplier": 2.5,        # Trust semantic more (mean - 2.5*std)
     },
 
     # Statistical strategy settings
@@ -122,18 +129,27 @@ SEMANTIC_FILTER_CONFIG = {
 RERANKING_CONFIG = {
     # Query-length aware boost scaling
     # Reduces keyword/title signals for longer conceptual queries to let semantics dominate
-    # Short queries (1-2 terms) need strong keyword matching: "venezuela", "marx"
-    # Long queries (4+ terms) need semantic understanding: "is communism compatible with democracy"
+    # Short queries (1-3 terms) need strong keyword matching: "venezuela", "marx"
+    # Long queries (5+ terms) need semantic understanding: "is communism compatible with democracy"
     "query_length_scaling": {
         "enabled": True,
-        "short_query_terms": 2,         # 1-2 terms = full boost (100%)
-        "medium_query_terms": 3,        # 3 terms = medium boost (50%)
-        "medium_query_multiplier": 0.5, # 3 terms = 50% boost
-        "long_query_multiplier": 0.25,  # 4+ terms = 25% boost (strong semantic focus)
+        "short_query_terms": 3,         # 1-3 terms = full boost (100%)
+        "medium_query_terms": 4,        # 4 terms = medium boost
+        "medium_query_multiplier": 0.5, # 50% boost for medium
+        "long_query_multiplier": 0.25,  # 5+ terms = 25% boost (semantic focus)
     },
 
     # Title term boost: rewards results where query terms appear in title
     "title_boost_max": 0.10,           # Maximum boost when all query terms in title
+
+    # Exact phrase presence boost (binary signals, applied before density boost)
+    # Checks if the full query phrase appears as-is in title or content
+    "phrase_presence_boost": {
+        "enabled": True,
+        "phrase_in_title": 0.08,      # Full phrase appears in title
+        "phrase_in_content": 0.06,    # Full phrase appears anywhere in content
+        "all_terms_in_title": 0.04,   # All query terms in title (not as phrase)
+    },
 
     # Keyword frequency boost: length-normalized density scoring
     # Uses keyword density (mentions per word) instead of raw counts
@@ -143,6 +159,19 @@ RERANKING_CONFIG = {
     "keyword_density_scale": 1000,     # Multiplier for density (e.g., 2% → 20 for log scaling)
     "keyword_rerank_top_n": 200,       # Number of top candidates to rerank
     "keyword_max_query_terms": 5,      # Skip keyword boost for longer queries (perf)
+
+    # Length normalization strategy
+    "keyword_length_normalization": "log",  # "linear" or "log"
+    "keyword_log_base_offset": 100,         # log(word_count + offset) - prevents log(0)
+
+    # Inverse semantic confidence: boost high-semantic, low-keyword results
+    # Rewards the model for finding conceptually related content without keyword overlap
+    "semantic_discovery_boost": {
+        "enabled": True,
+        "min_semantic_score": 0.70,   # Must score this high semantically
+        "max_keyword_hits": 1,        # Must have this few keyword matches (0 or 1)
+        "boost": 0.025,               # Small bonus for "conceptual discovery"
+    },
 }
 
 # Title Weighting Configuration
