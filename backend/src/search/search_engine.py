@@ -1446,18 +1446,14 @@ class SearchEngine:
             top_n = RERANKING_CONFIG.get('keyword_rerank_top_n', 200)
             content_check_candidates = needs_content_check[:top_n]
 
-            # Fetch content if not already present
+            # Batch fetch content for all results that don't have it yet
+            results_without_content = [r for r in content_check_candidates if not r.get('text')]
+            if results_without_content:
+                self._enrich_with_content(results_without_content)
+
+            # Now check all candidates for phrase matches in content
             for result in content_check_candidates:
                 content = result.get('text', '')
-
-                # Fetch content if not already present
-                if not content:
-                    # Batch fetch would be more efficient, but for simplicity fetch individually
-                    results_with_content = self._enrich_with_content([result])
-                    if results_with_content:
-                        content = results_with_content[0].get('text', '')
-                        result['text'] = content
-
                 if content:
                     content_lower = content.lower()
 
