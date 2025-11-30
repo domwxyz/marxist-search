@@ -1289,63 +1289,72 @@ class SearchEngine:
 
     def _apply_keyword_boost(self, results: List[Dict], query_terms: List[str]) -> List[Dict]:
         """
-        Apply lightweight keyword frequency boost to top candidates.
-        
-        Fetches content for top N results only, applies log-scaled term 
-        frequency scoring (pseudo-BM25), then re-sorts. This catches cases
-        where semantically similar but keyword-sparse results outrank
-        documents that actually contain the query terms frequently.
-        
+        Apply length-normalized keyword density boost to top candidates.
+
+        Uses keyword density (mentions per word) instead of raw term frequency.
+        This rewards focused short articles over long articles with scattered mentions.
+
+        Example:
+        - Short article (150 words, 3 mentions): density = 3/150 = 2% → high boost
+        - Long article (5000 words, 10 mentions): density = 10/5000 = 0.2% → low boost
+
         Args:
             results: Results after deduplication (sorted by semantic score)
             query_terms: Parsed query terms
-            
+
         Returns:
             Results with keyword boost applied and re-sorted
         """
         if not query_terms or not results:
             return results
-        
+
         top_n = RERANKING_CONFIG['keyword_rerank_top_n']
         max_boost = RERANKING_CONFIG['keyword_boost_max']
         scale = RERANKING_CONFIG['keyword_boost_scale']
-        
+        density_scale = RERANKING_CONFIG.get('keyword_density_scale', 1000)
+
         # Split into top candidates (to rerank) and tail (keep as-is)
         top_candidates = results[:top_n]
         tail = results[top_n:]
-        
+
         # Fetch content for top candidates only
         top_with_content = self._enrich_with_content(top_candidates)
-        
-        # Apply term frequency boost
+
+        # Apply length-normalized keyword density boost
         for result in top_with_content:
             content = result.get('text', '').lower()
-            if not content:
+            word_count = result.get('word_count', 1)  # Avoid division by zero
+
+            if not content or word_count < 1:
                 continue
-            
-            total_tf_score = 0
+
+            total_density_score = 0
             for term in query_terms:
                 # Count occurrences (whole word matching)
                 pattern = r'\b' + re.escape(term.lower()) + r'\b'
                 count = len(re.findall(pattern, content))
-                
-                # Log-scaled TF (diminishing returns after ~10 mentions)
+
                 if count > 0:
-                    import math
-                    tf = 1 + math.log(1 + count)
-                    total_tf_score += tf
-            
+                    # Calculate keyword density (normalized by document length)
+                    # Scale by density_scale to get reasonable numbers for log
+                    # E.g., 2% density * 1000 = 20 for log scaling
+                    density = (count / word_count) * density_scale
+
+                    # Log-scaled density (diminishing returns for very high density)
+                    density_tf = 1 + math.log(1 + density)
+                    total_density_score += density_tf
+
             # Normalize by number of query terms
-            avg_tf = total_tf_score / len(query_terms)
-            
+            avg_density_score = total_density_score / len(query_terms)
+
             # Scale to configured max boost
-            boost = min(max_boost, avg_tf * scale)
+            boost = min(max_boost, avg_density_score * scale)
             result['keyword_boost'] = round(boost, 4)
             result['score'] += boost
-        
+
         # Re-sort top candidates by new combined score
         top_with_content.sort(key=lambda x: x['score'], reverse=True)
-        
+
         # Combine: reranked top + unchanged tail
         return top_with_content + tail
 

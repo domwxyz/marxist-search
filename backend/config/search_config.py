@@ -123,9 +123,12 @@ RERANKING_CONFIG = {
     # Title term boost: rewards results where query terms appear in title
     "title_boost_max": 0.10,           # Maximum boost when all query terms in title
 
-    # Keyword frequency boost: pseudo-BM25 on top candidates
+    # Keyword frequency boost: length-normalized density scoring
+    # Uses keyword density (mentions per word) instead of raw counts
+    # This rewards focused short articles over long articles with scattered mentions
     "keyword_boost_max": 0.10,         # Maximum keyword frequency boost
     "keyword_boost_scale": 0.025,      # Scaling factor for log TF score
+    "keyword_density_scale": 1000,     # Multiplier for density (e.g., 2% → 20 for log scaling)
     "keyword_rerank_top_n": 200,       # Number of top candidates to rerank
     "keyword_max_query_terms": 5,      # Skip keyword boost for longer queries (perf)
 }
