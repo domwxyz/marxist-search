@@ -302,6 +302,60 @@ async def health_check(
 
 
 # ============================================================================
+# Index Reload Endpoint
+# ============================================================================
+
+@router.post("/reload-index")
+async def reload_index(
+    engine: SearchEngine = Depends(get_search_engine)
+):
+    """
+    Reload txtai index from disk to pick up incremental updates.
+
+    This endpoint should be called after the incremental update service
+    adds new articles to the index on disk. It refreshes the in-memory
+    index without restarting the API.
+
+    Returns:
+        Statistics about the reload (old count, new count, documents added)
+    """
+    try:
+        logger.info("Received index reload request")
+
+        # Offload to thread pool (reload is thread-safe but CPU-bound)
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            search_executor,
+            lambda: engine.reload_index()
+        )
+
+        logger.info(
+            f"Index reload complete: {result['old_count']} -> {result['new_count']} "
+            f"documents ({result['documents_added']:+d} change)"
+        )
+
+        return {
+            "success": True,
+            "message": "Index reloaded successfully",
+            "old_count": result['old_count'],
+            "new_count": result['new_count'],
+            "documents_added": result['documents_added'],
+            "index_path": result['index_path']
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to reload index: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "Failed to reload index",
+                "code": "RELOAD_FAILED",
+                "details": {"message": str(e)}
+            }
+        )
+
+
+# ============================================================================
 # Initialization
 # ============================================================================
 
