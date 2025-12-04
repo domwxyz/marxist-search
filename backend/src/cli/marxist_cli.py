@@ -439,6 +439,64 @@ def index_info(index_path):
         console.print(f"[red]Error loading index info: {e}[/red]\n")
 
 
+@index.command(name='reload')
+@click.option('--api-url', '-u', default='http://localhost:8000', help='API URL')
+def index_reload(api_url):
+    """
+    Reload the index in the running API to pick up incremental updates.
+
+    This command calls the API's reload endpoint to refresh the in-memory
+    index after new articles have been added by the incremental update service.
+
+    The API must be running for this command to work.
+    """
+    import requests
+
+    console.print("\n[bold cyan]Index Reload[/bold cyan]\n")
+
+    try:
+        console.print(f"[yellow]Sending reload request to {api_url}...[/yellow]")
+
+        response = requests.post(
+            f"{api_url}/api/v1/reload-index",
+            timeout=30
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+
+            console.print("\n[bold green]Index Reloaded Successfully![/bold green]\n")
+
+            # Display results
+            table = Table(title="Reload Statistics")
+            table.add_column("Metric", style="cyan")
+            table.add_column("Value", style="green")
+
+            table.add_row("Old Document Count", str(data.get('old_count', 0)))
+            table.add_row("New Document Count", str(data.get('new_count', 0)))
+            table.add_row("Documents Added", str(data.get('documents_added', 0)))
+            table.add_row("Index Path", str(data.get('index_path', 'N/A')))
+
+            console.print(table)
+            console.print()
+        else:
+            console.print(f"[red]Error: API returned status {response.status_code}[/red]")
+            console.print(f"[red]Message: {response.text}[/red]\n")
+            sys.exit(1)
+
+    except requests.exceptions.ConnectionError:
+        console.print(f"[red]Error: Could not connect to API at {api_url}[/red]")
+        console.print("[yellow]Make sure the API is running with:[/yellow]")
+        console.print("[yellow]  systemctl status marxist-search-api[/yellow]\n")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"[red]Error reloading index: {e}[/red]\n")
+        if LOG_LEVEL == "DEBUG":
+            import traceback
+            console.print(traceback.format_exc())
+        sys.exit(1)
+
+
 # ============================================================================
 # Search Commands
 # ============================================================================

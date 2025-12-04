@@ -50,6 +50,44 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def _trigger_api_reload(api_url: str = "http://localhost:8000", timeout: int = 30) -> bool:
+    """
+    Trigger the API to reload its in-memory index.
+
+    Args:
+        api_url: Base URL of the API
+        timeout: Request timeout in seconds
+
+    Returns:
+        True if reload was successful, False otherwise
+    """
+    try:
+        import requests
+
+        reload_url = f"{api_url}/api/v1/reload-index"
+        logger.info(f"Sending reload request to {reload_url}...")
+
+        response = requests.post(reload_url, timeout=timeout)
+
+        if response.status_code == 200:
+            data = response.json()
+            logger.info(
+                f"Reload successful: {data.get('old_count', 0)} -> {data.get('new_count', 0)} "
+                f"documents ({data.get('documents_added', 0):+d} change)"
+            )
+            return True
+        else:
+            logger.warning(f"API returned status {response.status_code}: {response.text}")
+            return False
+
+    except requests.exceptions.ConnectionError:
+        logger.warning(f"Could not connect to API at {api_url} (API may not be running)")
+        return False
+    except Exception as e:
+        logger.warning(f"Error triggering API reload: {e}")
+        return False
+
+
 async def main():
     """
     Run incremental update: archive new articles and update index.
@@ -105,6 +143,14 @@ async def main():
                 logger.info(f"  - Chunks created: {index_stats.get('chunks_created', 0)}")
                 logger.info(f"  - Total indexed: {index_stats.get('total_indexed', 0)}")
                 logger.info(f"  - Duration: {index_stats.get('duration_seconds', 0):.2f}s")
+
+            # Step 4: Trigger index reload in the API
+            logger.info("\n--- STEP 3: Reloading index in running API ---")
+            reload_success = _trigger_api_reload()
+            if reload_success:
+                logger.info("API index reloaded successfully")
+            else:
+                logger.warning("Failed to reload API index (API may not be running)")
         else:
             logger.info("\n--- STEP 2: Skipped (no new articles to index) ---")
 
