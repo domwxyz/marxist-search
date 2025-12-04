@@ -17,6 +17,7 @@ from txtai.embeddings import Embeddings
 from .filters import SearchFilters
 from .query_parser import QueryParser, ParsedQuery
 from ..ingestion.term_extractor import TermExtractor
+from ..indexing.txtai_manager import TxtaiManager
 from ..common.id_utils import parse_txtai_id, extract_article_id
 from config.search_config import (
     SEARCH_CONFIG,
@@ -59,7 +60,8 @@ class SearchEngine:
         self.index_path = index_path or INDEX_PATH
         self.db_path = db_path or DATABASE_PATH
 
-        self.embeddings: Optional[Embeddings] = None
+        # Use TxtaiManager for all index operations
+        self.txtai_manager = TxtaiManager(self.index_path)
         self.db_conn: Optional[sqlite3.Connection] = None
         self.rw_lock = threading.RLock()
 
@@ -82,89 +84,27 @@ class SearchEngine:
         # Initialize query parser for power-user syntax
         self.query_parser = QueryParser()
 
+    @property
+    def embeddings(self):
+        """Access embeddings through the txtai manager."""
+        return self.txtai_manager.embeddings
+
     def load_index(self):
-        """Load txtai index into memory (thread-safe)."""
+        """Load txtai index into memory (delegated to TxtaiManager)."""
         with self.rw_lock:
-            if self.embeddings is not None:
-                logger.warning("Index already loaded")
-                return
-
-            logger.info(f"Loading txtai index from {self.index_path}...")
-
-            try:
-                self.embeddings = Embeddings()
-                self.embeddings.load(self.index_path)
-
-                count = self.embeddings.count()
-                logger.info(f"Index loaded successfully with {count} documents")
-
-            except Exception as e:
-                logger.error(f"Failed to load index: {e}")
-                raise
+            self.txtai_manager.load_index()
 
     def reload_index(self) -> Dict:
         """
         Reload txtai index from disk to pick up incremental updates.
 
-        This method is thread-safe and can be called while the API is running
-        to refresh the in-memory index after incremental updates have been
-        written to disk by the update service.
+        Delegates to TxtaiManager for the actual reload operation.
 
         Returns:
             Dict with reload statistics (old_count, new_count, documents_added)
         """
         with self.rw_lock:
-            logger.info("Reloading txtai index from disk...")
-
-            old_count = 0
-            if self.embeddings is not None:
-                try:
-                    old_count = self.embeddings.count()
-                    logger.info(f"Current index has {old_count} documents")
-                except:
-                    pass
-
-                # Close old index
-                try:
-                    self.embeddings.close()
-                    logger.info("Closed old index")
-                except Exception as e:
-                    logger.warning(f"Error closing old index: {e}")
-
-                self.embeddings = None
-
-            # Load fresh index from disk
-            try:
-                self.embeddings = Embeddings()
-                self.embeddings.load(self.index_path)
-
-                new_count = self.embeddings.count()
-                added = new_count - old_count
-
-                logger.info(
-                    f"Index reloaded successfully: {old_count} -> {new_count} "
-                    f"documents ({added:+d} change)"
-                )
-
-                return {
-                    'success': True,
-                    'old_count': old_count,
-                    'new_count': new_count,
-                    'documents_added': added,
-                    'index_path': str(self.index_path)
-                }
-
-            except Exception as e:
-                logger.error(f"Failed to reload index: {e}")
-                # Try to recover by loading the index anyway
-                if self.embeddings is None:
-                    self.embeddings = Embeddings()
-                    try:
-                        self.embeddings.load(self.index_path)
-                        logger.info("Recovered: index loaded after error")
-                    except:
-                        logger.error("Failed to recover: could not load index")
-                raise
+            return self.txtai_manager.reload_index()
 
     def connect_db(self):
         """Create database connection."""
