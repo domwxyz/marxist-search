@@ -8,8 +8,10 @@ module.exports = {
       colors: {
         'marxist-red': '#DB1E1E',
       },
+      fontFamily: {
+        'built-titling': ['"Built Titling"', 'sans-serif'],
+      },
     },
   },
   plugins: [],
 }
-

@@ -68,12 +68,12 @@ function App() {
               className="h-12 w-12 sm:h-16 sm:w-16 object-contain bg-white p-1.5 sm:p-2 rounded-lg shadow-sm flex-shrink-0"
             />
             <div className="min-w-0">
-              <h1 className="text-xl sm:text-3xl font-bold text-white">
+              <h1 className="text-xl sm:text-3xl font-bold text-white font-built-titling">
                 Marxist Article Search
               </h1>
               <p className="text-red-100 mt-0.5 sm:mt-1 text-xs sm:text-base">
-                <span className="hidden sm:inline">Search publications from across the Revolutionary Communist International</span>
-                <span className="sm:hidden">Search RCI publications</span>
+                <span className="hidden sm:inline">Search across the Revolutionary Communist International</span>
+                <span className="sm:hidden">Search across the RCI</span>
               </p>
             </div>
           </div>
